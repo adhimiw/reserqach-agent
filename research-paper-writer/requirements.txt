@@ -1,0 +1,5 @@
+smolagents[mcp,litellm]>=1.23.0
+dspy-ai
+python-dotenv
+openai
+litellm

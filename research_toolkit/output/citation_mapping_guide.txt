@@ -1,0 +1,184 @@
+================================================================================
+CITATION MAPPING FOR DRAFT SECTIONS
+Integration Guide: Where to Place References in Your Academic Paper
+================================================================================
+
+SECTION 1: INTRODUCTION & CONTEXT
+Sources to cite:
+- Google (2025) - Overall AI adoption trends
+- JetBrains (2025) - Developer ecosystem overview
+- McKinsey (2025) - Global AI adoption context
+
+SECTION 2: THE ADOPTION PARADOX
+Sources to cite:
+- Google (2025) - 90% adoption rate, 80% productivity claims
+- JetBrains (2025) - 85% regular use, 62% reliance rates
+- Stack Overflow (2025) - 84% using or planning to use, sentiment decline
+- METR (2025) - Contrasting 19% actual slowdown
+
+SECTION 3: MEASURED PRODUCTIVITY REALITY
+Sources to cite:
+- METR (2025) - Controlled trial showing 19% slowdown [Primary source]
+- Google (2025) - Self-reported 80% improvement [For contrast]
+- Stanford (2025) - Benchmark improvements
+
+SECTION 4: JOB MARKET TRANSFORMATION
+Sources to cite:
+- Morgan Stanley Research (2025) - Job creation not replacement, 1.6-10% growth
+- ADP Research Institute (2025) - 20% decline in junior developer positions
+- Google (2025) - Demand for skilled developers
+
+SECTION 5: ECONOMIC IMPACT
+Sources to cite:
+- Morgan Stanley Research (2025) - Market growth $24B to $61B, 20% annual expansion
+- McKinsey (2025) - 64% report cost/revenue benefits
+- DORA (2025) - Organizational performance impacts
+
+SECTION 6: DEVELOPER SENTIMENT & TRUST
+Sources to cite:
+- Stack Overflow (2025) - Sentiment decline from 70% to 60%
+- JetBrains (2025) - 15% still not adopting, various reasons
+- Google (2025) - Code quality perception at 59%
+
+SECTION 7: CODE QUALITY & SECURITY CONSIDERATIONS
+Sources to cite:
+- Google (2025) - 59% positive influence on code quality
+- Stanford (2025) - Benchmark performance improvements
+- DORA (2025) - AI as amplifier of organizational strengths/weaknesses
+
+SECTION 8: DEVELOPER ROLE EVOLUTION
+Sources to cite:
+- Morgan Stanley Research (2025) - Shift toward curators, reviewers, integrators
+- DORA (2025) - Organizational system importance over tools
+- Google (2025) - Evolution of workflows and task distribution
+
+SECTION 9: TECHNICAL CAPABILITIES & LIMITATIONS
+Sources to cite:
+- Stanford (2025) - SWE-bench 67.3 percentage point improvement
+- METR (2025) - AI limitations in realistic 20min-4hr tasks
+- Google (2025) - Varying performance across task types
+
+SECTION 10: ORGANIZATIONAL IMPLEMENTATION
+Sources to cite:
+- DORA (2025) - Strategic focus on underlying organizational system
+- Morgan Stanley Research (2025) - AI agents expanding beyond coding
+- McKinsey (2025) - Implementation considerations for ROI
+
+SECTION 11: FUTURE OUTLOOK
+Sources to cite:
+- Morgan Stanley Research (2025) - Market projections and workforce growth
+- Stanford (2025) - Rapid model improvement trajectory
+- Google (2025) - Continued AI evolution and integration
+
+
+================================================================================
+SPECIFIC QUOTATIONS READY FOR CITATION
+================================================================================
+
+Quote 1 - Adoption Scale:
+"AI adoption among software development professionals has surged to 90%, 
+marking a 14% increase from last year" (Google, 2025).
+
+Quote 2 - Productivity Gap:
+"When developers are allowed to use AI tools, they take 19% longer to 
+complete issues—a significant slowdown that goes against developer beliefs 
+and expert forecasts" (METR, 2025).
+
+Quote 3 - Job Creation Perspective:
+"Contrary to current market concerns that AI will replace human developers, 
+we believe it will enhance productivity and lead to more hiring" (Morgan 
+Stanley Research, 2025).
+
+Quote 4 - Developer Sentiment:
+"Positive sentiment for AI tools has decreased in 2025: 70%+ in 2023 and 
+2024 to just 60% this year" (Stack Overflow, 2025).
+
+Quote 5 - Organizational Perspective:
+"AI's primary role is as an amplifier, magnifying an organization's existing 
+strengths and weaknesses" (DORA, 2025).
+
+Quote 6 - Developer Proficiency Evolution:
+"AI is becoming a standard in developers' lives: 85% of developers regularly 
+use AI tools for coding and development, and 62% rely on at least one AI 
+coding assistant, agent, or code editor" (JetBrains, 2025).
+
+Quote 7 - Market Growth Projection:
+"The software development market is likely to expand at an annual rate of 
+20%, rising from $24 billion in 2024 to $61 billion by 2029" (Morgan Stanley 
+Research, 2025).
+
+Quote 8 - Developer Role Transformation:
+"Developers are increasingly acting as curators, reviewers, integrators and 
+problem-solvers—making them more strategic and valuable" (Morgan Stanley 
+Research, 2025).
+
+Quote 9 - Benchmark Achievement:
+"Scores rose by 18.8, 48.9, and 67.3 percentage points on MMMU, GPQA, and 
+SWE-bench, respectively" (Stanford, 2025).
+
+Quote 10 - Adoption Momentum:
+"84% of respondents are using or planning to use AI tools in their 
+development process, an increase over last year (76%)" (Stack Overflow, 2025).
+
+
+================================================================================
+STATISTICAL DATA POINTS WITH SOURCES
+================================================================================
+
+ADOPTION METRICS:
+- 90% AI adoption rate → Google (2025)
+- 85% regular AI tool usage → JetBrains (2025)
+- 84% using or planning to use → Stack Overflow (2025)
+- 62% rely on AI coding assistants → JetBrains (2025)
+- 51% use AI daily → Stack Overflow (2025)
+- 15% have not adopted → JetBrains (2025)
+
+PRODUCTIVITY CLAIMS vs. REALITY:
+- 80%+ self-reported productivity improvements → Google (2025)
+- 59% report positive code quality impact → Google (2025)
+- 19% measured slowdown in completion time → METR (2025)
+- Developers expected 24% speedup → METR (2025)
+- Developers perceived 20% improvement (after experiencing slowdown) → METR (2025)
+
+SENTIMENT & CONFIDENCE:
+- 60% positive sentiment (2025) → Stack Overflow (2025)
+- 70%+ positive sentiment (2023-2024) → Stack Overflow (2025)
+- Developer confidence gap: ~5-24% discrepancy → METR (2025)
+
+JOB MARKET:
+- Expected workforce expansion: 1.6-10% annually → Morgan Stanley (2025)
+- Junior developer employment: 20% below 2022 peak → ADP Research (2025)
+
+MARKET ECONOMICS:
+- Current market size: $24 billion (2024) → Morgan Stanley (2025)
+- Projected market size: $61 billion (2029) → Morgan Stanley (2025)
+- Annual market expansion rate: 20% → Morgan Stanley (2025)
+- Organizations using AI: 78% (2024), up from 55% (2023) → Stanford (2025)
+
+BENCHMARK IMPROVEMENTS:
+- MMMU improvement: 18.8 percentage points → Stanford (2025)
+- GPQA improvement: 48.9 percentage points → Stanford (2025)
+- SWE-bench improvement: 67.3 percentage points → Stanford (2025)
+
+ORGANIZATIONAL SENTIMENT:
+- 64% report cost/revenue benefits → McKinsey (2025)
+- AI acting as amplifier of org capabilities → DORA (2025)
+
+
+================================================================================
+REVISION CHECKLIST FOR DRAFT INTEGRATION
+================================================================================
+
+Before finalizing your paper:
+
+□ Verify each statistic has corresponding citation
+□ Ensure direct quotes have quotation marks and citations
+□ Check that parenthetical citations use correct format: (Author, Year)
+□ Confirm all cited sources appear in References section
+□ Verify References section is alphabetically ordered
+□ Check that no references are listed that aren't cited in text
+□ Ensure consistent citation format throughout (APA style)
+□ Review References for proper URL formatting
+□ Confirm publication years are accurate (all should be 2025)
+□ Verify page numbers are included where available (not applicable for web sources)
+

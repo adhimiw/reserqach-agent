@@ -1,0 +1,173 @@
+================================================================================
+COMPLETE APA-FORMATTED BIBLIOGRAPHY
+The Impact of AI on Coding: 2025 Research Sources
+================================================================================
+
+REFERENCES (Alphabetically by Author/Organization):
+
+ADP Research Institute. (2025). Yes, AI is affecting employment. Here's the 
+    data. Retrieved from https://www.adpresearch.com/yes-ai-is-affecting-
+    employment-heres-the-data/
+
+DevOps Research and Assessment (DORA). (2025). State of AI-assisted software 
+    development 2025. Retrieved from https://dora.dev/research/2025/dora-
+    report/
+
+Google. (2025). How are developers using AI? Inside our 2025 DORA report. 
+    Google The Keyword. Retrieved from https://blog.google/technology/
+    developers/dora-report-2025/
+
+JetBrains Research. (2025, October). The state of developer ecosystem 2025: 
+    Coding in the age of AI. JetBrains Blog. Retrieved from https://blog.
+    jetbrains.com/research/2025/10/state-of-developer-ecosystem-2025/
+
+McKinsey & Company. (2025). The state of AI: Global survey 2025. McKinsey 
+    Insights. Retrieved from https://www.mckinsey.com/capabilities/
+    quantumblack/our-insights/the-state-of-ai
+
+METR. (2025, July 10). Measuring the impact of early-2025 AI on experienced 
+    open-source developers. METR Blog. Retrieved from https://metr.org/blog/
+    2025-07-10-early-2025-ai-experienced-os-dev-study/
+
+METR Research Team. (2025). Measuring the impact of early-2025 AI on 
+    experienced open-source developers. arXiv Preprint Series, 2507.09089. 
+    Retrieved from https://arxiv.org/abs/2507.09089
+
+Morgan Stanley Research. (2025). How AI coding is creating jobs. Morgan 
+    Stanley Insights. Retrieved from https://www.morganstanley.com/insights/
+    articles/ai-software-development-industry-growth
+
+Stack Overflow. (2025). 2025 Stack Overflow Developer Survey - AI. Stack 
+    Overflow Insights. Retrieved from https://survey.stackoverflow.co/2025/ai
+
+Stanford University. (2025). The 2025 AI Index Report. Stanford Human-
+    Centered Artificial Intelligence (HAI). Retrieved from https://hai.
+    stanford.edu/ai-index/2025-ai-index-report
+
+
+================================================================================
+IN-TEXT CITATION GUIDE FOR THE ACADEMIC PAPER
+================================================================================
+
+FIRST MENTION - Include full context:
+"According to Google (2025), 'AI adoption among software development 
+professionals has surged to 90%, marking a 14% increase from last year.'"
+
+SUBSEQUENT MENTIONS - Use shortened format:
+(Google, 2025) or Google (2025)
+
+FOR DIRECT STATISTICS:
+- 90% of developers have adopted AI tools (Google, 2025)
+- 80% report enhanced productivity (Google, 2025)
+- 19% slowdown in task completion measured in controlled trials 
+  (METR, 2025)
+
+FOR ORGANIZATION STATEMENTS:
+- Use: (Organization Name, Year)
+- Example: (Morgan Stanley Research, 2025)
+- Example: (Stack Overflow, 2025)
+
+
+================================================================================
+CITATION INTEGRATION CHECKLIST
+================================================================================
+
+Sources Cited in Draft and Requiring References:
+
+☑ AI Adoption Rates (90%, 85%, 84%)
+   Primary Source: Google (2025) / JetBrains (2025) / Stack Overflow (2025)
+
+☑ Productivity Claims (80%+ improvement, 81% positive)
+   Primary Source: Google (2025) / DORA (2025)
+
+☑ Measured Slowdown (19% increase in completion time)
+   Primary Source: METR (2025)
+
+☑ Job Market Impact (20% decline in junior developers)
+   Primary Source: ADP Research Institute (2025)
+
+☑ Career Growth Projections (1.6-10% annual growth)
+   Primary Source: Morgan Stanley Research (2025)
+
+☑ Market Expansion (20% annual growth, $24B to $61B)
+   Primary Source: Morgan Stanley Research (2025)
+
+☑ Sentiment Decline (70% to 60%)
+   Primary Source: Stack Overflow (2025)
+
+☑ Code Quality Impact (59% positive influence)
+   Primary Source: Google (2025)
+
+☑ Benchmark Performance Improvements (67.3 percentage points)
+   Primary Source: Stanford (2025)
+
+☑ AI as Amplifier Concept
+   Primary Source: DORA (2025)
+
+☑ Developer Role Transformation
+   Primary Source: Morgan Stanley Research (2025)
+
+☑ McKinsey ROI Data (64% report benefits)
+   Primary Source: McKinsey & Company (2025)
+
+
+================================================================================
+FOOTNOTE/ENDNOTE FORMAT (Alternative to In-Text Citations)
+================================================================================
+
+If using footnote citations instead of parenthetical in-text citations:
+
+¹ Google, "How are developers using AI? Inside our 2025 DORA report," 
+  Google The Keyword, 2025, https://blog.google/technology/developers/
+  dora-report-2025/.
+
+² METR, "Measuring the impact of early-2025 AI on experienced open-source 
+  developers," METR Blog, July 10, 2025, https://metr.org/blog/2025-07-10-
+  early-2025-ai-experienced-os-dev-study/.
+
+³ Morgan Stanley Research, "How AI coding is creating jobs," Morgan Stanley 
+  Insights, 2025, https://www.morganstanley.com/insights/articles/ai-
+  software-development-industry-growth.
+
+
+================================================================================
+QUALITY ASSURANCE CHECKLIST
+================================================================================
+
+Citation Format Verification:
+✓ Author/Organization name format: Standard format used
+✓ Publication year included: (YYYY) format used consistently
+✓ URLs included: All sources have retrievable URLs
+✓ Alphabetical order: References organized A-Z by author/organization
+✓ Hanging indent: Format ready for academic document (implement in editor)
+✓ Consistency: All citations follow same APA guidelines
+
+Source Quality Assessment:
+✓ Recency: All sources dated 2025 (current research)
+✓ Authority: Mix of academic institutions, industry leaders, and research organizations
+✓ Relevance: All sources directly address AI impact on software development
+✓ Credibility: Includes peer-reviewed research (arXiv), industry surveys, and institutional research
+
+Coverage Assessment:
+✓ Adoption metrics: Multiple perspectives (Google, JetBrains, Stack Overflow)
+✓ Productivity data: Both self-reported (Google, DORA) and measured (METR)
+✓ Economic impact: Market projections and job market data included
+✓ Technical impact: Code quality, benchmarks, and security considerations
+✓ Organizational perspective: McKinsey, Morgan Stanley, DORA organizational insights
+
+
+================================================================================
+NOTE FOR FINAL DOCUMENT PREPARATION
+================================================================================
+
+When integrating into your academic paper:
+
+1. Place this bibliography at the end of the paper, starting on a new page
+2. Title it: "References" (not "Bibliography" in APA format)
+3. Use a hanging indent for each reference (first line flush left, 
+   subsequent lines indented 0.5 inches)
+4. Maintain single spacing within references, double spacing between them
+5. Use only the sources you actually cite in your paper
+6. Format the final document in your word processor (Google Docs, Word, etc.)
+   to ensure proper APA formatting with hanging indents
+

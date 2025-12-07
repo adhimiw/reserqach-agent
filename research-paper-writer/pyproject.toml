@@ -1,0 +1,16 @@
+[project]
+name = "research-paper-writer"
+version = "0.1.0"
+description = "AI Agent for writing research papers using Perplexity, Chrome, and Word MCP"
+requires-python = ">=3.10"
+dependencies = [
+    "smolagents[litellm]>=1.23.0",
+    "mcp",
+    "dspy-ai",
+    "python-dotenv",
+    "openai",
+    "litellm"
+]
+
+[tool.uv]
+dev-dependencies = []
