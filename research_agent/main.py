@@ -1,196 +1,349 @@
 """
-Unified Research Agent System - Main Entry Point
-Consolidated from research-paper-writer and research_toolkit
+Advanced Research Agent System - Main Entry Point
+Multi-agent orchestration with DSPy optimization and async workflows
 """
 
 import sys
 import os
+import asyncio
 import argparse
+import logging
+from pathlib import Path
+
 from config import Config
-from tools.mcp_tools import get_research_tools, get_writing_tools, combine_tool_lists
-from agents.researcher import create_researcher_agent, create_recursive_researcher
-from agents.writer import create_writer_agent, create_verifier_agent, create_planner_agent
+from tools import (
+    get_research_tools,
+    get_writing_tools,
+    get_all_tools,
+    configure_dspy,
+    MCPConnectionManager,
+    MCPServerType
+)
+from agents import (
+    ResearchAgent,
+    WriterAgent,
+    FactCheckerAgent,
+    EditorAgent,
+    MultiAgentOrchestrator,
+    create_full_orchestrator
+)
+
+# Setup logging
+logging.basicConfig(
+    level=getattr(logging, Config.LOG_LEVEL),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def setup_environment():
     """Initialize environment and configuration"""
     Config.ensure_output_dirs()
-    print("Research Agent System initialized")
-    print(f"Output directory: {Config.OUTPUT_DIR}")
-
-
-def run_simple_research(topic: str):
-    """Run a simple research and writing workflow"""
-    print(f"\n{'='*60}")
-    print(f"SIMPLE RESEARCH MODE: {topic}")
-    print(f"{'='*60}\n")
+    logger.info("Research Agent System initialized")
+    logger.info(f"Output directory: {Config.OUTPUT_DIR}")
+    logger.info(f"Enabled MCP servers: {Config.get_enabled_mcp_servers()}")
     
+    # Configure DSPy if enabled
+    if Config.DSPY_ENABLED:
+        configure_dspy("perplexity")
+        logger.info("DSPy configured with Perplexity model")
+
+
+async def run_full_workflow(
+    topic: str,
+    depth: int = 2,
+    style: str = "academic",
+    output_filename: str = None
+) -> dict:
+    """
+    Run complete research workflow with all agents
+    
+    Args:
+        topic: Research topic
+        depth: Research depth (1-3)
+        style: Writing style (academic, technical, general)
+        output_filename: Output document filename
+        
+    Returns:
+        Workflow results
+    """
+    logger.info(f"Starting full workflow for: {topic}")
     setup_environment()
     
+    if not output_filename:
+        # Generate filename from topic
+        safe_topic = "".join(c if c.isalnum() else "_" for c in topic)[:50]
+        output_filename = f"{safe_topic}.docx"
+    
     try:
-        # Get tools
-        research_tools = get_research_tools()
-        writing_tools = get_writing_tools()
+        # Get tools asynchronously
+        research_tools_dict = await get_research_tools()
+        writing_tools_dict = await get_writing_tools()
         
-        # Create agents
-        with research_tools['perplexity'] as perplexity_ctx, \
-             research_tools['browser'] as browser_ctx, \
-             writing_tools['word'] as word_ctx:
-            
-            research_tools_list = combine_tool_lists(
-                perplexity_ctx,
-                browser_ctx
-            )
-            writing_tools_list = list(word_ctx.tools)
-            
-            # Initialize agents
-            researcher = create_researcher_agent(tools=research_tools_list)
-            writer = create_writer_agent(tools=writing_tools_list)
-            
-            # Research phase
-            print(f"[RESEARCH] Gathering information about: {topic}")
-            research_findings = researcher.run(
-                f"Research the following topic comprehensively: {topic}\n"
-                "Provide key findings, citations, and insights."
-            )
-            
-            # Writing phase
-            print(f"[WRITING] Generating research paper...")
-            paper = writer.run(
-                f"Based on these research findings:\n{research_findings}\n\n"
-                "Generate a well-structured academic research paper with citations."
-            )
-            
-            print("[COMPLETE] Research paper generated successfully")
-            return paper
-            
+        # Extract tool lists
+        research_tools = []
+        for tool_collection in research_tools_dict.values():
+            if tool_collection and hasattr(tool_collection, 'tools'):
+                research_tools.extend(list(tool_collection.tools))
+        
+        writing_tools = []
+        for tool_collection in writing_tools_dict.values():
+            if tool_collection and hasattr(tool_collection, 'tools'):
+                writing_tools.extend(list(tool_collection.tools))
+        
+        # Create orchestrator
+        orchestrator = await create_full_orchestrator(
+            research_tools=research_tools,
+            writing_tools=writing_tools
+        )
+        
+        # Execute workflow
+        result = await orchestrator.execute_workflow(
+            topic=topic,
+            research_depth=depth,
+            output_filename=output_filename,
+            style=style
+        )
+        
+        logger.info("Workflow completed successfully")
+        return result
+        
     except Exception as e:
-        print(f"Error in simple research: {str(e)}")
+        logger.error(f"Workflow failed: {e}", exc_info=True)
         raise
 
 
-def run_recursive_research(topic: str, depth: int = 3):
-    """Run recursive research with multi-level breakdown"""
-    print(f"\n{'='*60}")
-    print(f"RECURSIVE RESEARCH MODE: {topic}")
-    print(f"Depth: {depth}")
-    print(f"{'='*60}\n")
+async def run_parallel_research(topics: list[str]) -> list[dict]:
+    """
+    Research multiple topics in parallel
     
+    Args:
+        topics: List of research topics
+        
+    Returns:
+        List of research results
+    """
+    logger.info(f"Starting parallel research for {len(topics)} topics")
     setup_environment()
     
     try:
-        # Get tools
-        research_tools = get_research_tools()
-        writing_tools = get_writing_tools()
+        research_tools_dict = await get_research_tools()
+        research_tools = []
+        for tool_collection in research_tools_dict.values():
+            if tool_collection and hasattr(tool_collection, 'tools'):
+                research_tools.extend(list(tool_collection.tools))
         
-        with research_tools['perplexity'] as perplexity_ctx, \
-             research_tools['browser'] as browser_ctx, \
-             research_tools['tavily'] as tavily_ctx, \
-             writing_tools['word'] as word_ctx:
-            
-            research_tools_list = combine_tool_lists(
-                perplexity_ctx,
-                browser_ctx,
-                tavily_ctx
-            )
-            writing_tools_list = list(word_ctx.tools)
-            
-            # Initialize agents
-            planner = create_planner_agent()
-            researcher = create_recursive_researcher(tools=research_tools_list, max_depth=depth)
-            verifier = create_verifier_agent(tools=research_tools_list)
-            writer = create_writer_agent(tools=writing_tools_list)
-            
-            # Planning phase
-            print(f"[PLANNING] Breaking down topic: {topic}")
-            plan = planner.run(
-                f"Create a detailed research plan for: {topic}\n"
-                "Break it down into research questions and sub-topics."
-            )
-            
-            # Recursive research phase
-            print(f"[RESEARCH] Conducting recursive research...")
-            research_findings = researcher.run(
-                f"Using this plan:\n{plan}\n\n"
-                f"Conduct recursive research at depth {depth}.\n"
-                "Gather comprehensive information on all sub-topics."
-            )
-            
-            # Verification phase
-            print(f"[VERIFICATION] Fact-checking findings...")
-            verified = verifier.run(
-                f"Verify these research findings:\n{research_findings}\n"
-                "Check for accuracy and provide verification status."
-            )
-            
-            # Writing phase
-            print(f"[WRITING] Generating comprehensive research paper...")
-            paper = writer.run(
-                f"Based on verified findings:\n{verified}\n\n"
-                "Generate a comprehensive academic research paper with proper citations and structure."
-            )
-            
-            print("[COMPLETE] Research paper generated successfully")
-            return paper
-            
+        # Create research agent
+        researcher = ResearchAgent(tools=research_tools)
+        
+        # Research all topics in parallel
+        tasks = [researcher.research_topic(topic) for topic in topics]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Filter out exceptions
+        valid_results = [r for r in results if not isinstance(r, Exception)]
+        
+        logger.info(f"Completed {len(valid_results)}/{len(topics)} research tasks")
+        return valid_results
+        
     except Exception as e:
-        print(f"Error in recursive research: {str(e)}")
+        logger.error(f"Parallel research failed: {e}", exc_info=True)
         raise
+
+
+def run_simple_research(topic: str, style: str = "academic"):
+    """Run simple research workflow (synchronous wrapper)"""
+    logger.info(f"Simple research mode: {topic}")
+    return asyncio.run(run_full_workflow(
+        topic=topic,
+        depth=1,
+        style=style
+    ))
+
+
+def run_comprehensive_research(topic: str, depth: int = 3, style: str = "academic"):
+    """Run comprehensive research workflow (synchronous wrapper)"""
+    logger.info(f"Comprehensive research mode: {topic}, depth={depth}")
+    return asyncio.run(run_full_workflow(
+        topic=topic,
+        depth=depth,
+        style=style
+    ))
+
+
+async def interactive_mode():
+    """Interactive CLI mode"""
+    print("\n" + "="*60)
+    print("RESEARCH AGENT - INTERACTIVE MODE")
+    print("="*60 + "\n")
+    
+    setup_environment()
+    
+    while True:
+        print("\nOptions:")
+        print("1. Simple Research")
+        print("2. Comprehensive Research")
+        print("3. Parallel Research")
+        print("4. Check MCP Status")
+        print("5. Exit")
+        
+        choice = input("\nSelect option (1-5): ").strip()
+        
+        if choice == "1":
+            topic = input("Enter research topic: ").strip()
+            if topic:
+                result = await run_full_workflow(topic, depth=1)
+                print(f"\nResult: {result.get('status')}")
+                print(f"Document: {result.get('document_path')}")
+        
+        elif choice == "2":
+            topic = input("Enter research topic: ").strip()
+            depth = input("Enter depth (1-3, default 2): ").strip()
+            depth = int(depth) if depth.isdigit() else 2
+            if topic:
+                result = await run_full_workflow(topic, depth=depth)
+                print(f"\nResult: {result.get('status')}")
+                print(f"Document: {result.get('document_path')}")
+        
+        elif choice == "3":
+            topics_input = input("Enter topics (comma-separated): ").strip()
+            topics = [t.strip() for t in topics_input.split(",") if t.strip()]
+            if topics:
+                results = await run_parallel_research(topics)
+                print(f"\nCompleted {len(results)} research tasks")
+        
+        elif choice == "4":
+            manager = MCPConnectionManager()
+            status = manager.get_health_status()
+            print("\nMCP Server Status:")
+            for server, healthy in status.items():
+                print(f"  {server}: {'✓ Connected' if healthy else '✗ Disconnected'}")
+        
+        elif choice == "5":
+            print("Exiting...")
+            break
+        
+        else:
+            print("Invalid option")
 
 
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
-        description="Unified Research Agent System",
+        description="Advanced Research Agent System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py "Artificial Intelligence in Healthcare" --mode simple
-  python main.py "Machine Learning Trends" --mode recursive --depth 3
+  # Simple research
+  python main.py "Artificial Intelligence in Healthcare"
+  
+  # Comprehensive research
+  python main.py "Machine Learning Trends" --depth 3 --style academic
+  
+  # Parallel research
+  python main.py --parallel "AI in Medicine" "Deep Learning" "NLP"
+  
+  # Interactive mode
+  python main.py --interactive
         """
     )
     
-    parser.add_argument("topic", help="Research topic")
     parser.add_argument(
-        "--mode",
-        choices=["simple", "recursive"],
-        default="simple",
-        help="Research mode (default: simple)"
+        "topic",
+        nargs="?",
+        help="Research topic (required unless using --interactive or --parallel)"
     )
     parser.add_argument(
         "--depth",
         type=int,
-        default=3,
-        help="Recursion depth for recursive mode (default: 3)"
+        default=2,
+        choices=[1, 2, 3],
+        help="Research depth: 1=basic, 2=detailed, 3=comprehensive (default: 2)"
+    )
+    parser.add_argument(
+        "--style",
+        choices=["academic", "technical", "general"],
+        default="academic",
+        help="Writing style (default: academic)"
     )
     parser.add_argument(
         "--output",
         type=str,
-        default="output",
-        help="Output directory for results"
+        help="Output filename (auto-generated if not specified)"
+    )
+    parser.add_argument(
+        "--parallel",
+        nargs="+",
+        help="Research multiple topics in parallel"
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Run in interactive mode"
+    )
+    parser.add_argument(
+        "--check-status",
+        action="store_true",
+        help="Check MCP server status and exit"
     )
     
     args = parser.parse_args()
     
-    # Update config if output directory specified
-    if args.output != "output":
-        Config.OUTPUT_DIR = args.output
-        Config.PAPERS_DIR = os.path.join(args.output, "papers")
-        Config.CACHE_DIR = os.path.join(args.output, "cache")
+    # Check status mode
+    if args.check_status:
+        setup_environment()
+        manager = MCPConnectionManager()
+        status = manager.get_health_status()
+        print("\nMCP Server Status:")
+        for server, healthy in status.items():
+            print(f"  {server}: {'✓ Connected' if healthy else '✗ Disconnected'}")
+        return
     
+    # Interactive mode
+    if args.interactive:
+        asyncio.run(interactive_mode())
+        return
+    
+    # Parallel mode
+    if args.parallel:
+        results = asyncio.run(run_parallel_research(args.parallel))
+        print(f"\nCompleted {len(results)} research tasks")
+        for i, result in enumerate(results, 1):
+            print(f"\n{i}. {result.query}")
+            print(f"   Findings: {len(result.findings)}")
+            print(f"   Confidence: {result.confidence:.2f}")
+        return
+    
+    # Standard mode (requires topic)
+    if not args.topic:
+        parser.error("topic is required unless using --interactive or --parallel")
+    
+    # Run workflow
     try:
-        if args.mode == "recursive":
-            result = run_recursive_research(args.topic, args.depth)
-        else:
-            result = run_simple_research(args.topic)
+        result = asyncio.run(run_full_workflow(
+            topic=args.topic,
+            depth=args.depth,
+            style=args.style,
+            output_filename=args.output
+        ))
         
-        print(f"\n[SUCCESS] Research completed and saved to {Config.PAPERS_DIR}")
+        print("\n" + "="*60)
+        print("WORKFLOW COMPLETE")
+        print("="*60)
+        print(f"Status: {result['status']}")
+        print(f"Topic: {result['topic']}")
+        print(f"Document: {result['document_path']}")
+        print(f"Execution time: {result['execution_time']:.2f}s")
+        print("\nStage timings:")
+        for stage, time in result.get('stage_times', {}).items():
+            print(f"  {stage}: {time:.2f}s")
         
     except KeyboardInterrupt:
-        print("\n[CANCELLED] Research interrupted by user")
+        print("\n\nWorkflow interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\n[ERROR] {str(e)}")
+        logger.error(f"Fatal error: {e}", exc_info=True)
+        print(f"\nError: {e}")
         sys.exit(1)
 
 
