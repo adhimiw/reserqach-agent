@@ -4,7 +4,7 @@ Multi-model support with DSPy integration, MCP servers, and smolagents framework
 """
 
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from dataclasses import dataclass
 from enum import Enum
 from dotenv import load_dotenv
@@ -241,8 +241,12 @@ class Config:
     
     # ============== Factory Methods ==============
     @classmethod
-    def get_model(cls, provider: Optional[ModelProvider] = None, role: Optional[AgentRole] = None):
+    def get_model(cls, provider: Optional[Union[ModelProvider, AgentRole]] = None, role: Optional[AgentRole] = None):
         """Get LLM model instance - either by provider or by role"""
+        # Handle case where AgentRole is passed as provider
+        if isinstance(provider, AgentRole):
+            return ModelFactory.get_model_for_role(provider)
+        
         if role:
             return ModelFactory.get_model_for_role(role)
         

@@ -67,15 +67,21 @@ class BaseResearchAgent(ABC):
         """
         self.name = name
         self.role = role
-        self.tools = tools
+        self.tools = tools or []
         self.model = model or Config.get_model(role=role)
         self.max_iterations = max_iterations or Config.MAX_AGENT_ITERATIONS
         self.state = AgentState()
         
+        # Convert tools to list if needed
+        if hasattr(self.tools, '__iter__') and not isinstance(self.tools, (list, str)):
+            tool_list = list(self.tools)
+        else:
+            tool_list = self.tools if isinstance(self.tools, list) else []
+        
         # Create underlying smolagent
         agent_class = CodeAgent if use_code_agent else ToolCallingAgent
         self.agent = agent_class(
-            tools=tools,
+            tools=tool_list,
             model=self.model,
             name=name,
             description=self._get_description(),
