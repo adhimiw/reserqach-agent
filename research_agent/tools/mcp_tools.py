@@ -210,9 +210,12 @@ class MCPConnectionManager:
     def get_health_status(self) -> Dict[str, bool]:
         """Get health status of all servers"""
         return {s.value: status for s, status in self._health_status.items()}
+    
+    @property
+    def health_status(self) -> Dict[str, bool]:
+        """Property accessor for health status"""
+        return self.get_health_status()
 
-
-# ============== Helper Functions ==============
 
 # ============== Helper Functions ==============
 
