@@ -1,23 +1,72 @@
 """
-Research Agent Initialization Module
+Agents Package - Specialized Research Agents
+Multi-agent system for comprehensive research workflows
 """
 
-from agents.researcher import create_researcher_agent, create_recursive_researcher
-from agents.writer import create_writer_agent, create_verifier_agent, create_planner_agent, create_orchestrator_agent
-from tools.mcp_tools import get_research_tools, get_writing_tools, get_all_tools, combine_tool_lists
+# Base classes
+from .base_agent import (
+    BaseResearchAgent,
+    AgentWithMemory,
+    AgentMessage,
+    AgentState,
+    AgentMemory
+)
+
+# Specialized agents
+from .researcher import (
+    ResearchAgent,
+    RecursiveResearchAgent,
+    ResearchResult,
+    create_researcher_agent,
+    create_recursive_researcher
+)
+
+from .writer import (
+    WriterAgent,
+    EditorAgent,
+    FactCheckerAgent,
+    DocumentSection,
+    create_writer_agent,
+    create_verifier_agent
+)
+
+# Orchestration
+from .orchestrator import (
+    MultiAgentOrchestrator,
+    WorkflowStage,
+    WorkflowState,
+    create_full_orchestrator
+)
 
 __all__ = [
-    # Agents
-    'create_researcher_agent',
-    'create_recursive_researcher',
-    'create_writer_agent',
-    'create_verifier_agent',
-    'create_planner_agent',
-    'create_orchestrator_agent',
+    # Base classes
+    "BaseResearchAgent",
+    "AgentWithMemory",
+    "AgentMessage",
+    "AgentState",
+    "AgentMemory",
     
-    # Tools
-    'get_research_tools',
-    'get_writing_tools',
-    'get_all_tools',
-    'combine_tool_lists'
+    # Research agents
+    "ResearchAgent",
+    "RecursiveResearchAgent",
+    "ResearchResult",
+    
+    # Writing/Editing agents
+    "WriterAgent",
+    "EditorAgent",
+    "FactCheckerAgent",
+    "DocumentSection",
+    
+    # Orchestration
+    "MultiAgentOrchestrator",
+    "WorkflowStage",
+    "WorkflowState",
+    "create_full_orchestrator",
+    
+    # Factory functions (backward compatibility)
+    "create_researcher_agent",
+    "create_recursive_researcher",
+    "create_writer_agent",
+    "create_verifier_agent"
 ]
+
