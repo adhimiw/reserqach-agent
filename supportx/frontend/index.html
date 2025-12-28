@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SupportX Demo UI</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 900px; margin: 24px auto; }
+      pre { background: #f6f8fa; padding: 12px; overflow: auto; }
+      input, button { padding: 8px; }
+      .row { display: flex; gap: 8px; margin: 8px 0; }
+      #log { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; min-height: 200px; }
+    </style>
+  </head>
+  <body>
+    <h1>SupportX Demo UI</h1>
+    <p>
+      This is a tiny static demo client.
+      Run the backend and open this file in a browser.
+    </p>
+
+    <h2>1) Register</h2>
+    <div class="row">
+      <input id="email" placeholder="email" value="demo@example.com" />
+      <input id="password" placeholder="password" value="demo123" type="password" />
+      <button onclick="register()">Register</button>
+    </div>
+    <pre id="registerOut"></pre>
+
+    <h2>2) Biometric login (simulation)</h2>
+    <div class="row">
+      <button onclick="biometricLogin()">Simulate FaceID / Fingerprint</button>
+    </div>
+    <pre id="authOut"></pre>
+
+    <h2>3) Chat</h2>
+    <div class="row">
+      <input id="msg" placeholder="Ask a support question" style="flex: 1" />
+      <button onclick="send()">Send</button>
+    </div>
+    <div id="log"></div>
+
+    <script>
+      const API = "http://localhost:8000";
+      let biometricToken = null;
+      let authToken = null;
+      let conversationId = null;
+
+      function hmacSha256Base64(keyB64, message) {
+        // Browser-native HMAC for the biometric simulation.
+        const rawKey = Uint8Array.from(atob(keyB64.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+        return crypto.subtle.importKey('raw', rawKey, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+          .then(key => crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message)))
+          .then(sig => {
+            const bytes = new Uint8Array(sig);
+            let s = '';
+            bytes.forEach(b => s += String.fromCharCode(b));
+            return btoa(s).replace(/\+/g, '-').replace(/\//g, '_');
+          });
+      }
+
+      async function register() {
+        const res = await fetch(`${API}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.value, password: password.value })
+        });
+        const data = await res.json();
+        registerOut.textContent = JSON.stringify(data, null, 2);
+        biometricToken = data.biometric_token;
+      }
+
+      async function biometricLogin() {
+        if (!biometricToken) throw new Error('Register first');
+        const ch = await fetch(`${API}/auth/biometric/challenge`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.value })
+        }).then(r => r.json());
+
+        const signature = await hmacSha256Base64(biometricToken, ch.challenge);
+
+        const login = await fetch(`${API}/auth/biometric/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.value, challenge: ch.challenge, signature })
+        }).then(r => r.json());
+
+        authToken = login.token;
+        authOut.textContent = JSON.stringify({ challenge: ch, login }, null, 2);
+
+        const convo = await fetch(`${API}/chat/start`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        }).then(r => r.json());
+
+        conversationId = convo.conversation_id;
+      }
+
+      function append(sender, text) {
+        log.textContent += `${sender}: ${text}\n\n`;
+      }
+
+      async function send() {
+        if (!authToken || !conversationId) throw new Error('Login first');
+        const text = msg.value;
+        msg.value = '';
+        append('you', text);
+
+        const res = await fetch(`${API}/chat/${conversationId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          body: JSON.stringify({ message: text })
+        }).then(r => r.json());
+
+        append('supportx', res.answer + `\n\n(meta: sentiment=${res.sentiment}, confusion=${res.confusion_score}, score=${res.top_score})`);
+      }
+    </script>
+  </body>
+</html>
