@@ -23,7 +23,8 @@ def setup_environment():
 
 
 def run_analysis(dataset_path: str, target_column: str = None, 
-                generate_word: bool = True, verbose: bool = False):
+                generate_word: bool = True, verbose: bool = False,
+                use_council: bool = False):
     """
     Run autonomous data analysis on a dataset
     
@@ -32,20 +33,34 @@ def run_analysis(dataset_path: str, target_column: str = None,
         target_column: Target variable for modeling (auto-detected if None)
         generate_word: Whether to generate Word document
         verbose: Whether to show verbose output
+        use_council: Whether to use LLM Council for consensus decisions
     """
     print(f"\n{'='*60}")
     print(f"ANALYZING DATASET: {os.path.basename(dataset_path)}")
+    print(f"LLM Council: {'ENABLED' if use_council else 'DISABLED'}")
     print(f"{'='*60}\n")
     
     try:
-        # Create and run pipeline
-        pipeline = AnalysisPipeline(dataset_path)
-        
-        # Run full analysis
-        results = pipeline.run_full_pipeline(
-            target_column=target_column,
-            generate_word=generate_word
-        )
+        # Create pipeline based on council setting
+        if use_council:
+            from analysis_engine import EnhancedAnalysisPipeline
+            pipeline = EnhancedAnalysisPipeline(dataset_path, use_council=True)
+            
+            # Import asyncio if using council
+            import asyncio
+            results = asyncio.run(pipeline.run_full_pipeline_with_council(
+                target_column=target_column,
+                generate_word=generate_word
+            ))
+        else:
+            # Create and run standard pipeline
+            pipeline = AnalysisPipeline(dataset_path)
+            
+            # Run full analysis
+            results = pipeline.run_full_pipeline(
+                target_column=target_column,
+                generate_word=generate_word
+            )
         
         # Print summary
         print(f"\n{'='*60}")
@@ -61,6 +76,14 @@ def run_analysis(dataset_path: str, target_column: str = None,
         print(f"  - Insights extracted: {len(results.get('insights', []))}")
         print(f"  - Visualizations created: {len(results.get('visualizations', {}))}")
         print()
+        
+        # Council usage summary
+        if use_council:
+            print("LLM Council Summary:")
+            print(f"  - Hypotheses via Council: {results.get('used_council_for_hypotheses', False)}")
+            print(f"  - Insights via Council: {results.get('used_council_for_insights', False)}")
+            print(f"  - Model Ranking via Council: {'Yes' if results.get('model_ranking') else 'No'}")
+            print()
         
         # List generated files
         print("Generated Files:")
@@ -131,6 +154,18 @@ Examples:
         help="Enable verbose output with detailed error messages"
     )
     
+    parser.add_argument(
+        "--use-council",
+        action="store_true",
+        help="Enable LLM Council for multi-agent consensus decisions"
+    )
+    
+    parser.add_argument(
+        "--council-backend",
+        dest="council_backend",
+        help="Path to llm-council backend directory (default: /home/engine/project/llm-council/backend)"
+    )
+    
     args = parser.parse_args()
     
     # Setup
@@ -146,7 +181,8 @@ Examples:
         dataset_path=args.dataset,
         target_column=args.target_column,
         generate_word=not args.no_word,
-        verbose=args.verbose
+        verbose=args.verbose,
+        use_council=args.use_council
     )
 
 

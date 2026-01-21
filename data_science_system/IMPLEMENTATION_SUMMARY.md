@@ -3,6 +3,57 @@
 ## Overview
 Successfully implemented a comprehensive autonomous data science system that meets all specified requirements. The system can accept raw datasets, automatically discover/test/validate hypotheses, explain findings in clear language, detect/handle errors, and provide reproducible results with full transparency.
 
+## LLM Council Integration - NEW!
+
+Enhanced with **multi-agent consensus decision-making** using [LLM Council](https://github.com/karpathy/llm-council) for higher quality insights and more robust decisions.
+
+### What is LLM Council?
+- Multi-agent system where multiple LLMs independently analyze the same question
+- Stage 1: Each LLM provides their individual response
+- Stage 2: Each LLM (anonymized) ranks and evaluates others' responses
+- Stage 3: Chairman LLM synthesizes all inputs into final consensus answer
+- Results in more diverse, validated, and higher quality outputs
+
+### Integration Points
+
+1. **Hypothesis Generation**
+   - Without Council: Single LLM generates ~50 hypotheses
+   - With Council: 4 LLMs generate hypotheses individually → peer ranking → consensus synthesis
+   - Result: ~75 diverse, peer-reviewed hypotheses
+
+2. **Insight Extraction**
+   - Without Council: Single LLM perspective on analysis results
+   - With Council: Multiple LLMs evaluate findings → peer discussion → consensus insights
+   - Result: ~75 nuanced, well-validated insights
+
+3. **Model Ranking and Selection**
+   - Without Council: Best by single metric (e.g., highest accuracy)
+   - With Council: Multi-criteria evaluation (accuracy, complexity, interpretability, suitability)
+   - Result: Better model recommendations with full justification
+
+### New Files Added
+
+#### Core Integration
+- `analysis_engine/llm_council_integration.py` - LLM Council adapter class
+  - `LLMCouncilAdapter` - Main adapter for council integration
+  - `EnhancedAnalysisPipeline` - Pipeline with council-aware methods
+
+#### Entry Points
+- `main_with_council.py` - Dedicated entry point for council-enabled analysis
+- `test_council_integration.py` - Comprehensive council integration tests
+
+#### Documentation
+- `LLM_COUNCIL_INTEGRATION.md` - Detailed council integration guide
+
+### Updated Files
+- `analysis_engine/llm_council_integration.py` - NEW: LLM Council adapter with consensus methods
+- `analysis_engine/__init__.py` - Exported new LLM Council classes (LLMCouncilAdapter, EnhancedAnalysisPipeline)
+- `main_with_council.py` - NEW: Council-specific entry point for analysis
+- `main.py` - Updated with `--use-council` and `--council-backend` arguments
+- `test_council_integration.py` - NEW: Council integration test suite
+- `LLM_COUNCIL_INTEGRATION.md` - NEW: Detailed council integration guide
+- `README.md` - Updated with LLM Council features and usage
+
 ## Implementation Summary
 
 ### ✅ Core Components
