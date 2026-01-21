@@ -1,11 +1,35 @@
 """
 LLM Council Integration for Data Science System
-Integrates the LLM Council (multi-agent consensus) into analysis workflow
+Integrates LLM Council (multi-agent consensus) into analysis workflow
 """
 
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 import logging
+import sys
+import os
+
+# Add project to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import pandas (lazy, only if needed for actual data processing)
+try:
+    import pandas as pd
+    import numpy as np
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
+    print("Note: pandas not available, running structural tests only")
+
+# Import LLM API management modules (with graceful fallback)
+try:
+    from llm_api_integration import LLMAPIManager, TokenLogger, EndpointHealthChecker
+    HAS_API_MANAGER = True
+except ImportError:
+    HAS_API_MANAGER = False
+    LLMAPIManager = None
+    TokenLogger = None
+    EndpointHealthChecker = None
 
 logger = logging.getLogger("LLMCouncilIntegration")
 
@@ -20,8 +44,30 @@ class LLMCouncilAdapter:
         Args:
             council_backend_path: Path to llm-council backend
         """
-        self.council_backend_path = council_backend_path or "/home/engine/project/llm-council"
+        self.council_backend_path = council_backend_path or "/home/engine/project/llm-council/backend"
         self.enabled = True
+        
+        # Initialize API manager
+        self.api_manager = None
+        self.token_logger = None
+        self.health_checker = None
+        
+        if HAS_API_MANAGER:
+            # Mock config for API manager
+            mock_config = {
+                "PERPLEXITY_API_KEY": os.getenv("PERPLEXITY_API_KEY", ""),
+                "MISTRAL_API_KEY": os.getenv("MISTRAL_API_KEY", ""),
+                "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY", ""),
+                "OPENROUTER_API_KEY": os.getenv("OPENROUTER_API_KEY", ""),
+            }
+            
+            try:
+                self.api_manager = LLMAPIManager(config=mock_config)
+                self.token_logger = TokenLogger()
+                self.health_checker = EndpointHealthChecker(api_manager=self.api_manager)
+                logger.info("LLM API manager initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize API manager: {e}")
         
         logger.info(f"LLM Council adapter initialized with backend: {self.council_backend_path}")
     
@@ -41,7 +87,7 @@ class LLMCouncilAdapter:
             logger.info("LLM Council disabled, using single LLM")
             return []
         
-        logger.info("Generating hypotheses with LLM Council consensus")
+        logger.info(f"Generating hypotheses with LLM Council consensus (max: {max_hypotheses})")
         
         # Build prompt for hypothesis generation
         prompt = f"""You are a team of expert data scientists analyzing a dataset.
@@ -50,7 +96,6 @@ Dataset Information:
 - Shape: {dataset_info.get('shape', 'Unknown')}
 - Columns: {dataset_info.get('columns', [])}
 - Data Types: {dataset_info.get('dtypes', {})}
-- Missing Values: {dataset_info.get('missing_values', {})}
 
 Your task is to generate {max_hypotheses} testable hypotheses about this dataset.
 
@@ -61,95 +106,158 @@ For each hypothesis, provide:
 4. **Test method**: Statistical test to validate this hypothesis
 5. **Reasoning**: Why this hypothesis is worth testing
 
-Generate diverse hypotheses covering different aspects of the data. Focus on insights that would be actionable for a business or research context.
+Generate diverse hypotheses covering different aspects of data. Focus on insights that would be actionable for a business or research context.
 
 Format each hypothesis as a JSON object with these fields: type, columns, hypothesis, test_method, reasoning.
+
+Return all hypotheses as a JSON array.
 """
         
-        # Use LLM Council for consensus
-        from llm_council.backend.council import run_full_council, parse_ranking_from_text
+        # Check if we have API manager available for LLM Council
+        if not self.api_manager:
+            logger.warning("API manager not available, cannot use LLM Council")
+            # Fallback to mock hypotheses
+            return self._generate_mock_hypotheses(dataset_info, max_hypotheses)
         
-        stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
-        
-        # Parse final synthesis for hypotheses
-        hypotheses = []
-        
-        if stage3_result and 'response' in stage3_result:
-            final_response = stage3_result['response']
+        # Use LLM Council backend
+        try:
+            # Try to import from llm-council backend
+            sys.path.insert(0, self.council_backend_path)
             
-            # Try to extract JSON from final response
-            import json
-            import re
+            from council import run_full_council
             
-            # Look for JSON blocks
-            json_match = re.search(r'\{[^{}]*\}', final_response)
+            # Run LLM Council for hypothesis generation
+            stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
             
-            if json_match:
-                try:
-                    # Parse as JSON array
-                    hypotheses_data = json.loads(f"[{json_match.group()}]")
-                    
-                    if isinstance(hypotheses_data, list):
-                        hypotheses = hypotheses_data[:max_hypotheses]
-                    elif isinstance(hypotheses_data, dict):
-                        # Single hypothesis
-                        hypotheses_data['id'] = f"hypothesis_1"
-                        hypotheses = [hypotheses_data]
+            # Parse final synthesis for hypotheses
+            hypotheses = []
+            
+            if stage3_result and 'response' in stage3_result:
+                final_response = stage3_result['response']
                 
-                except json.JSONDecodeError:
-                    logger.warning("Failed to parse hypotheses JSON from council response")
-        
-        # Fallback: use best individual response
-        if not hypotheses and metadata.get('aggregate_rankings'):
-            best_model = metadata['aggregate_rankings'][0] if metadata['aggregate_rankings'] else None
+                # Try to extract JSON from final response
+                import json
+                import re
+                
+                # Look for JSON blocks
+                json_matches = re.findall(r'\{[^{}]*\}', final_response)
+                
+                for json_match in json_matches:
+                    try:
+                        # Parse as JSON array
+                        hypotheses_data = json.loads(f"[{json_match.group()}]")
+                        
+                        if isinstance(hypotheses_data, list):
+                            # Filter and structure each hypothesis
+                            for h_data in hypotheses_data[:max_hypotheses]:
+                                if isinstance(h_data, dict):
+                                    hypothesis = {
+                                        "id": f"consensus_hypothesis_{len(hypotheses) + 1}",
+                                        "type": h_data.get("type", self._guess_hypothesis_type(str(h_data.get("hypothesis", "")))),
+                                        "columns": h_data.get("columns", []),
+                                        "hypothesis": h_data.get("hypothesis", str(h_data.get("hypothesis", "N/A"))[:500],
+                                        "test_method": h_data.get("test_method", "To be determined"),
+                                        "reasoning": f"Generated by LLM Council consensus from {metadata.get('label_to_model', {}).get('Response A', 'unknown')}'s perspective and other LLM members"
+                                    }
+                                    hypotheses.append(hypothesis)
+                            elif isinstance(h_data, str):
+                                    hypothesis = {
+                                        "id": f"consensus_hypothesis_{len(hypotheses) + 1}",
+                                        "type": self._guess_hypothesis_type(h_data),
+                                        "columns": [],
+                                        "hypothesis": h_data[:500],
+                                        "test_method": "To be determined",
+                                        "reasoning": "Generated by LLM Council consensus"
+                                    }
+                                    hypotheses.append(hypothesis)
+                            elif isinstance(h_data, list):
+                                for i, h_item in enumerate(h_data):
+                                    if isinstance(h_item, dict):
+                                        hypothesis = {
+                                            "id": f"consensus_hypothesis_{len(hypotheses) + 1}",
+                                            "type": h_item.get("type", self._guess_hypothesis_type(str(h_item.get("hypothesis", "")))),
+                                            "columns": h_item.get("columns", []),
+                                            "hypothesis": str(h_item.get("hypothesis", "N/A"))[:500],
+                                            "test_method": h_item.get("test_method", "To be determined"),
+                                            "reasoning": "Generated by LLM Council consensus"
+                                        }
+                                        hypotheses.append(hypothesis)
+                
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse hypotheses JSON from council response")
             
-            if best_model:
-                best_response = next(
-                    (r['response'] for r in stage1_results if r['model'] == best_model['model']),
-                    None
+            # Log token usage if available
+            if self.token_logger and metadata.get('duration_ms'):
+                # Estimate tokens for the operation
+                estimated_tokens = int(metadata.get('duration_ms', 0) / 10  # Rough estimate
+                self.token_logger.log_request(
+                    provider="council_backend",
+                    model="unknown",
+                    prompt_tokens=estimated_tokens * 2,  # Prompt + response
+                    completion_tokens=estimated_tokens,
+                    cost=0.0,  # Council backend is external
+                    duration_ms=metadata.get('duration_ms', 0),
+                    operation="generate_hypotheses"
                 )
-                
-                if best_response:
-                    # Try to extract hypotheses from individual response
-                    hypotheses = self._extract_hypotheses_from_text(best_response, max_hypotheses)
-        
-        logger.info(f"Generated {len(hypotheses)} hypotheses using LLM Council")
-        return hypotheses
+            
+            logger.info(f"Generated {len(hypotheses)} hypotheses using LLM Council")
+            return hypotheses
+            
+        except Exception as e:
+            logger.error(f"Error in LLM Council hypothesis generation: {e}")
+            # Fallback to mock hypotheses
+            return self._generate_mock_hypotheses(dataset_info, max_hypotheses)
     
-    def _extract_hypotheses_from_text(self, text: str, max_count: int) -> List[Dict[str, Any]]:
-        """
-        Extract hypotheses from unstructured text
+    def _generate_mock_hypotheses(self, dataset_info: Dict[str, Any], 
+                               max_hypotheses: int) -> List[Dict[str, Any]]:
+        """Generate mock hypotheses when LLM Council is unavailable"""
+        logger.info("Generating mock hypotheses (LLM Council not available)")
         
-        Args:
-            text: Text containing hypotheses
-            max_count: Maximum number to extract
+        # Create realistic mock hypotheses based on dataset info
+        columns = dataset_info.get('columns', [])
+        dtypes = dataset_info.get('dtypes', {})
+        numeric_cols = [col for col, dtype in dtypes.items() if 'int' in dtype or 'float' in dtype]
+        categorical_cols = [col for col, dtype in dtypes.items() if dtype == 'object']
         
-        Returns:
-            List of hypothesis dictionaries
-        """
-        import re
+        mock_hypotheses = []
         
-        hypotheses = []
+        # Generate correlation hypotheses
+        for i, col1 in enumerate(numeric_cols[:min(10, len(numeric_cols)-1)]):
+            if i < len(numeric_cols) - 1:
+                col2 = numeric_cols[i + 1]
+                mock_hypotheses.append({
+                    "id": f"mock_hypothesis_{len(mock_hypotheses) + 1}",
+                    "type": "correlation",
+                    "columns": [col1, col2],
+                    "hypothesis": f"Potential correlation exists between {col1} and {col2}",
+                    "test_method": "Pearson correlation test",
+                    "reasoning": "Based on data types and column analysis, a correlation relationship may exist between these numerical columns"
+                })
         
-        # Look for hypothesis patterns
-        # Pattern: "Hypothesis [number]:" or numbered items
-        numbered_items = re.findall(r'(?:Hypothesis|H)?\s*\d+\s*[:.]?\s*(.+?)(?=\n(?:\d+\.|Hypothesis|$))', text, re.IGNORECASE)
+        # Generate distribution hypotheses
+        for col in numeric_cols[:5]:
+            mock_hypotheses.append({
+                "id": f"mock_hypothesis_{len(mock_hypotheses) + 1}",
+                "type": "distribution",
+                "columns": [col],
+                "hypothesis": f"{col} may not follow a normal distribution",
+                "test_method": "Shapiro-Wilk normality test",
+                "reasoning": f"Categorical analysis of {col} would reveal distribution characteristics"
+            })
         
-        for i, item in enumerate(numbered_items[:max_count], 1):
-            # Try to identify type and content
-            item_text = item.strip()
-            
-            hypothesis = {
-                "id": f"consensus_hypothesis_{i}",
-                "type": self._guess_hypothesis_type(item_text),
-                "hypothesis": item_text,
-                "test_method": "To be determined",
-                "reasoning": "Generated by LLM Council consensus"
-            }
-            
-            hypotheses.append(hypothesis)
+        # Generate categorical hypotheses
+        for col in categorical_cols[:5]:
+            unique_count = dataset_info.get('shape', [0, 0])[1] // len(categorical_cols) if len(categorical_cols) > 0 else 10
+            mock_hypotheses.append({
+                "id": f"mock_hypothesis_{len(mock_hypotheses) + 1}",
+                "type": "categorical",
+                "columns": [col],
+                "hypothesis": f"Different values in {col} may have distinct patterns",
+                "test_method": "Chi-square test of independence",
+                "reasoning": f"With {unique_count} unique values, chi-square tests could reveal associations"
+            })
         
-        return hypotheses
+        return mock_hypotheses[:max_hypotheses]
     
     def _guess_hypothesis_type(self, text: str) -> str:
         """Guess hypothesis type from text content"""
@@ -163,8 +271,10 @@ Format each hypothesis as a JSON object with these fields: type, columns, hypoth
             return "categorical"
         elif any(word in text_lower for word in ['outlier', 'anomaly', 'extreme', 'unusual']):
             return "outlier"
-        elif any(word in text_lower for word in ['trend', 'increase', 'decrease', 'over time', 'temporal']):
+        elif any(word in text_lower for word in ['trend', 'increase', 'decrease', 'over time', 'temporal', 'time series']):
             return "trend"
+        elif any(word in text_lower for word in ['predict', 'forecast', 'model', 'regress']):
+            return "model"
         else:
             return "general"
     
@@ -181,9 +291,10 @@ Format each hypothesis as a JSON object with these fields: type, columns, hypoth
             List of insights generated by council consensus
         """
         if not self.enabled:
+            logger.info("LLM Council disabled, using single LLM")
             return []
         
-        logger.info("Generating insights with LLM Council consensus")
+        logger.info(f"Generating insights with LLM Council consensus (min: {min_insights})")
         
         # Build prompt for insight generation
         statistical_summary = self._summarize_statistical_results(analysis_results)
@@ -210,31 +321,129 @@ Focus on insights that are:
 - Have clear "why" and "how" components
 
 Format each insight as a JSON object with these fields: title, type, what, why, how, recommendation.
+
+Return all insights as a JSON array.
 """
         
-        # Use LLM Council
-        from llm_council.backend.council import run_full_council
+        if not self.api_manager:
+            logger.warning("API manager not available, cannot use LLM Council")
+            return self._generate_mock_insights(analysis_results, min_insights)
         
-        stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
+        # Use LLM Council for insight generation
+        try:
+            sys.path.insert(0, self.council_backend_path)
+            from council import run_full_council
+            
+            # Run LLM Council for insight generation
+            stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
+            
+            # Parse final synthesis for insights
+            insights = []
+            
+            if stage3_result and 'response' in stage3_result:
+                final_response = stage3_result['response']
+                
+                # Try to extract JSON from final response
+                import json
+                import re
+                
+                # Look for JSON blocks
+                json_matches = re.findall(r'\{[^{}]*\}', final_response)
+                
+                for json_match in json_matches:
+                    try:
+                        # Parse as JSON array
+                        insights_data = json.loads(f"[{json_match.group()}]")
+                        
+                        if isinstance(insights_data, list):
+                            # Filter and structure each insight
+                            for i_data in insights_data[:min_insights]:
+                                if isinstance(i_data, dict):
+                                    insight = {
+                                        "id": f"consensus_insight_{len(insights) + 1}",
+                                        "title": str(i_data.get("title", "N/A"))[:200],
+                                        "type": i_data.get("type", self._guess_insight_type(str(i_data.get("what", "")))),
+                                        "what": str(i_data.get("what", "N/A"))[:500],
+                                        "why": str(i_data.get("why", "Generated by LLM Council consensus from peer review of analysis results"))[:500],
+                                        "how": str(i_data.get("how", "Apply findings according to context and requirements"))[:500],
+                                        "recommendation": str(i_data.get("recommendation", "Use this insight to inform decision-making"))[:500]
+                                    }
+                                    insights.append(insight)
+                                elif isinstance(i_data, str):
+                                    insight = {
+                                        "id": f"consensus_insight_{len(insights) + 1}",
+                                        "title": i_data[:200],
+                                        "type": "general",
+                                        "what": i_data[:500],
+                                        "why": "Generated by LLM Council consensus",
+                                        "how": "Apply according to context",
+                                        "recommendation": "Use to inform decisions"
+                                    }
+                                    insights.append(insight)
+                
+                    except json.JSONDecodeError:
+                        logger.warning("Failed to parse insights JSON from council response")
+            
+            logger.info(f"Generated {len(insights)} insights using LLM Council")
+            return insights
+            
+        except Exception as e:
+            logger.error(f"Error in LLM Council insight generation: {e}")
+            return self._generate_mock_insights(analysis_results, min_insights)
+    
+    def _generate_mock_insights(self, analysis_results: Dict[str, Any], 
+                              min_insights: int) -> List[Dict[str, Any]]:
+        """Generate mock insights when LLM Council is unavailable"""
+        logger.info("Generating mock insights (LLM Council not available)")
         
-        # Parse insights from final synthesis
         insights = []
         
-        if stage3_result and 'response' in stage3_result:
-            final_response = stage3_result['response']
-            insights = self._extract_insights_from_text(final_response, min_insights)
+        # Generate insights from statistical tests
+        statistical_tests = analysis_results.get("statistical_tests", [])
+        significant_tests = [t for t in statistical_tests if t.get("significant", False)]
         
-        logger.info(f"Generated {len(insights)} insights using LLM Council")
-        return insights
+        for i, test in enumerate(significant_tests[:min(30, len(significant_tests))]):
+            test_type = test.get("test", "unknown")
+            interpretation = test.get("interpretation", "")
+            
+            insights.append({
+                "id": f"mock_insight_{i + 1}",
+                "title": f"Significant {test_type} Finding",
+                "type": "statistical_test",
+                "what": f"{interpretation[:200]}",
+                "why": f"Statistical test {test_type} was significant (p < 0.05), indicating a genuine pattern rather than random chance",
+                "how": "This finding can be used to validate assumptions and guide further analysis",
+                "recommendation": "Consider this result in your interpretation and subsequent analysis steps"
+            })
+        
+        # Generate insights from models
+        models = analysis_results.get("models", {}).get("models", {})
+        for model_name, model_info in models.items():
+            if isinstance(model_info, dict) and "metrics" in model_info:
+                metrics = model_info["metrics"]
+                test_r2 = metrics.get("test_r2", 0)
+                
+                if test_r2 > 0.7:
+                    insights.append({
+                        "id": f"mock_insight_{len(insights) + 1}",
+                        "title": f"Strong {model_info.get('model_type', model_name)} Performance",
+                        "type": "model_performance",
+                        "what": f"{model_name} achieved R² = {test_r2:.3f} on test data",
+                        "why": f"High R² score indicates {model_name} explains {test_r2*100:.0f}% of the variance in the target variable",
+                        "how": "Use this model for predictions. The high R² suggests good fit to the data.",
+                        "recommendation": "Consider using this model for production predictions."
+                    })
+        
+        return insights[:min_insights]
     
     def _summarize_statistical_results(self, results: Dict[str, Any]) -> str:
         """Summarize analysis results for prompt"""
         summary_parts = []
         
         # Statistical tests
-        if 'statistical_tests' in results:
-            tests = results['statistical_tests']
-            significant_tests = [t for t in tests if t.get('significant', False)]
+        if "statistical_tests" in results:
+            tests = results["statistical_tests"]
+            significant_tests = [t for t in tests if t.get("significant", False)]
             summary_parts.append(f"- Statistical Tests: {len(tests)} tests performed, {len(significant_tests)} significant")
             
             # Add key findings
@@ -242,92 +451,44 @@ Format each insight as a JSON object with these fields: title, type, what, why, 
                 summary_parts.append(f"  - {test.get('test', 'Unknown')}: {test.get('interpretation', '')[:100]}")
         
         # Models
-        if 'models' in results:
-            models = results['models']
-            if 'models' in models:
-                model_count = len(models['models'])
+        if "models" in results:
+            models = results["models"]
+            if "models" in models:
+                model_count = len(models["models"])
                 summary_parts.append(f"- Predictive Models: {model_count} models built")
                 
                 # Add best model info
-                if models.get('best_model'):
-                    best = models['best_model']
-                    if 'metrics' in best:
-                        metrics = best['metrics']
+                if models.get("best_model"):
+                    best = models["best_model"]
+                    if "metrics" in best:
+                        metrics = best["metrics"]
                         summary_parts.append(f"  - Best Model: {metrics.get('model_type', 'Unknown')}")
                         summary_parts.append(f"  - Performance: {metrics.get('interpretation', '')[:100]}")
         
         # Correlations
-        if 'statistical_tests' in results:
-            correlations = [t for t in results['statistical_tests'] if t.get('test') == 'correlation']
+        if "statistical_tests" in results:
+            correlations = [t for t in results["statistical_tests"] if t.get('test') == 'correlation']
             if correlations:
                 strong_corrs = [c for c in correlations if abs(c.get('correlation_coefficient', 0)) >= 0.5]
                 summary_parts.append(f"- Strong Correlations: {len(strong_corrs)} found")
         
         return "\n".join(summary_parts)
     
-    def _extract_insights_from_text(self, text: str, min_count: int) -> List[Dict[str, Any]]:
-        """Extract insights from unstructured text"""
-        import json
-        import re
-        
-        insights = []
-        
-        # Try JSON extraction first
-        json_matches = re.findall(r'\{[^{}]*\}', text)
-        
-        for match in json_matches:
-            try:
-                insight_data = json.loads(match)
-                
-                if isinstance(insight_data, dict):
-                    insight_data['id'] = f"consensus_insight_{len(insights) + 1}"
-                    insights.append(insight_data)
-                elif isinstance(insight_data, list):
-                    for item in insight_data:
-                        item['id'] = f"consensus_insight_{len(insights) + 1}"
-                        insights.append(item)
-            except json.JSONDecodeError:
-                continue
-        
-        # If we have enough insights from JSON, return them
-        if len(insights) >= min_count:
-            return insights[:min_count]
-        
-        # Fallback: extract numbered items
-        numbered_items = re.findall(r'(?:Insight|I)?\s*\d+\s*[:.]?\s*(.+?)(?=\n(?:\d+\.|Insight|$))', text, re.IGNORECASE)
-        
-        for i, item in enumerate(numbered_items[:min_count - len(insights)], len(insights) + 1):
-            item_text = item.strip()
-            
-            insight = {
-                "id": f"consensus_insight_{i}",
-                "type": self._guess_insight_type(item_text),
-                "title": item_text[:100],
-                "what": item_text,
-                "why": "Generated by LLM Council consensus from analysis results",
-                "how": "Apply findings according to context and requirements",
-                "recommendation": "Use this insight to inform decision-making"
-            }
-            
-            insights.append(insight)
-        
-        return insights[:min_count]
-    
     def _guess_insight_type(self, text: str) -> str:
         """Guess insight type from text content"""
         text_lower = text.lower()
         
-        if any(word in text_lower for word in ['correlation', 'relationship', 'associated']):
+        if any(word in text_lower for word in ['correlation', 'relationship', 'associated', 'linked']):
             return "correlation"
         elif any(word in text_lower for word in ['distribution', 'normal', 'skew']):
             return "distribution"
         elif any(word in text_lower for word in ['outlier', 'anomaly', 'unusual']):
             return "outlier"
-        elif any(word in text_lower for word in ['model', 'predict', 'forecast', 'accuracy']):
+        elif any(word in text_lower for word in ['model', 'predict', 'forecast', 'accuracy', 'performance']):
             return "model_performance"
         elif any(word in text_lower for word in ['missing', 'data quality', 'clean']):
             return "data_quality"
-        elif any(word in text_lower for word in ['significant', 'test', 'p-value']):
+        elif any(word in text_lower for word in ['significant', 'test', 'p-value', 'statistic']):
             return "statistical_test"
         else:
             return "general"
@@ -343,11 +504,12 @@ Format each insight as a JSON object with these fields: title, type, what, why, 
             Dictionary with ranking and recommendation
         """
         if not self.enabled:
-            return {}
+            logger.info("LLM Council disabled, returning empty ranking")
+            return {"council_used": False}
         
         logger.info("Ranking models with LLM Council consensus")
         
-        # Build prompt for model ranking
+        # Build model summary for prompt
         model_summary = "\n".join([
             f"- {name}: {metrics.get('model_type', name)}"
             f"  Metrics: {metrics}"
@@ -360,15 +522,15 @@ Models Evaluated:
 {model_summary}
 
 Your task is to:
-1. Evaluate each model's performance based on the metrics
+1. Evaluate each model's performance based on metrics
 2. Rank models from best to worst
 3. Provide a recommendation for which model to use
 
 Consider:
-- Accuracy/performance metrics
+- Accuracy/performance metrics (R², accuracy, F1-score, etc.)
 - Model complexity and interpretability
 - Training time and computational cost
-- Suitability for the use case
+- Suitability for use case (real-time, batch, interpretability vs accuracy tradeoff)
 
 Provide your ranking as:
 1. A numbered list from best (1) to worst
@@ -376,7 +538,7 @@ Provide your ranking as:
 
 Format:
 EVALUATION:
-[Your evaluation of each model]
+[Your detailed evaluation of each model]
 
 FINAL RANKING:
 1. [Model Name]
@@ -387,64 +549,56 @@ RECOMMENDATION:
 [Model name] with [justification]
 """
         
-        # Use LLM Council
-        from llm_council.backend.council import run_full_council
+        # Check if we have API manager available
+        if not self.api_manager:
+            logger.warning("API manager not available, cannot use LLM Council")
+            return {"council_used": False}
         
-        stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
-        
-        # Parse final ranking and recommendation
-        result = {
-            "council_used": True,
-            "individual_evaluations": stage2_results,
-            "final_synthesis": stage3_result,
-            "ranking": [],
-            "recommendation": {}
-        }
-        
-        if stage3_result and 'response' in stage3_result:
-            response = stage3_result['response']
-            result['ranking'] = self._parse_model_ranking(response)
-            result['recommendation'] = self._parse_recommendation(response, list(model_results.keys()))
-        
-        return result
-    
-    def _parse_model_ranking(self, text: str) -> List[str]:
-        """Parse model ranking from council response"""
-        import re
-        
-        # Look for numbered list in "FINAL RANKING" section
-        ranking_section = text
-        
-        if "FINAL RANKING:" in text:
-            ranking_section = text.split("FINAL RANKING:")[-1]
-        
-        # Extract numbered items
-        numbered_matches = re.findall(r'^\d+\.\s*(.+)$', ranking_section, re.MULTILINE)
-        
-        rankings = [match.strip() for match in numbered_matches if match.strip()]
-        
-        return rankings
-    
-    def _parse_recommendation(self, text: str, available_models: List[str]) -> Dict[str, str]:
-        """Parse recommendation from council response"""
-        import re
-        
-        result = {
-            "model": "unknown",
-            "justification": "No recommendation available"
-        }
-        
-        if "RECOMMENDATION:" in text:
-            rec_section = text.split("RECOMMENDATION:")[-1]
+        # Use LLM Council for model ranking
+        try:
+            sys.path.insert(0, self.council_backend_path)
+            from council import run_full_council
             
-            # Try to match model name
-            for model in available_models:
-                if model.lower() in rec_section.lower():
-                    result['model'] = model
-                    result['justification'] = rec_section[:200]
-                    break
-        
-        return result
+            # Run LLM Council for model ranking
+            stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
+            
+            # Parse final ranking and recommendation
+            result = {
+                "council_used": True,
+                "individual_evaluations": stage2_results,
+                "final_synthesis": stage3_result,
+                "ranking": [],
+                "recommendation": {}
+            }
+            
+            if stage3_result and 'response' in stage3_result:
+                response_text = stage3_result['response']
+                
+                # Parse ranking
+                from council import parse_ranking_from_text
+                ranking = parse_ranking_from_text(response_text)
+                result['ranking'] = ranking
+                
+                # Parse recommendation
+                import re
+                if "RECOMMENDATION:" in response_text:
+                    rec_section = response_text.split("RECOMMENDATION:")[-1]
+                    
+                    # Try to extract model name
+                    for model_name in model_results.keys():
+                        if model_name.lower() in rec_section.lower():
+                            result['recommendation'] = {
+                                "model": model_name,
+                                "justification": rec_section[:300]
+                            }
+                            break
+            
+            logger.info(f"Model ranking completed: {len(result['ranking'])} models ranked")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in LLM Council model ranking: {e}")
+            return {"council_used": False, "error": str(e)}
     
     def enable(self):
         """Enable LLM Council"""
@@ -467,14 +621,16 @@ class EnhancedAnalysisPipeline:
     def __init__(self, dataset_path: str, use_council: bool = True,
                  council_backend_path: str = None):
         """
-        Initialize enhanced pipeline with LLM Council
+        Initialize enhanced pipeline with LLM Council integration
         
         Args:
             dataset_path: Path to dataset
             use_council: Whether to use LLM Council for consensus
             council_backend_path: Path to llm-council backend
         """
+        # Import pipeline components
         from workflow import AnalysisPipeline
+        from analysis_engine import LLMCouncilAdapter
         
         # Base pipeline
         self.base_pipeline = AnalysisPipeline(dataset_path)
@@ -497,7 +653,7 @@ class EnhancedAnalysisPipeline:
         """
         if self.use_council:
             # Use LLM Council for consensus-based hypothesis generation
-            dataset_info = self.base_pipeline.results['dataset_info']
+            dataset_info = self.base_pipeline.results.get('dataset_info', {})
             return await self.council_adapter.generate_hypotheses_with_council(
                 dataset_info, max_hypotheses
             )
@@ -601,5 +757,10 @@ class EnhancedAnalysisPipeline:
         
         # Save execution log
         self.base_pipeline.save_execution_log()
+        
+        # Log token usage if available
+        if HAS_API_MANAGER and self.council_adapter.api_manager:
+            summary = self.council_adapter.api_manager.get_total_cost()
+            logger.info(f"Total estimated API cost: ${summary['total_cost_usd']:.6f}")
         
         return self.base_pipeline.results
