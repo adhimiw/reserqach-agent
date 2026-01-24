@@ -124,10 +124,11 @@ Return all hypotheses as a JSON array.
             # Try to import from llm-council backend
             sys.path.insert(0, self.council_backend_path)
             
-            from council import run_full_council
+            # Import the local council module
+            import council
             
             # Run LLM Council for hypothesis generation
-            stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
+            stage1_results, stage2_results, stage3_result, metadata = await council.run_full_council(prompt)
             
             # Parse final synthesis for hypotheses
             hypotheses = []
@@ -332,10 +333,11 @@ Return all insights as a JSON array.
         # Use LLM Council for insight generation
         try:
             sys.path.insert(0, self.council_backend_path)
-            from council import run_full_council
+            # Import the local council module
+            import council
             
             # Run LLM Council for insight generation
-            stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
+            stage1_results, stage2_results, stage3_result, metadata = await council.run_full_council(prompt)
             
             # Parse final synthesis for insights
             insights = []
@@ -557,10 +559,11 @@ RECOMMENDATION:
         # Use LLM Council for model ranking
         try:
             sys.path.insert(0, self.council_backend_path)
-            from council import run_full_council
+            # Import the local council module
+            import council
             
             # Run LLM Council for model ranking
-            stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
+            stage1_results, stage2_results, stage3_result, metadata = await council.run_full_council(prompt)
             
             # Parse final ranking and recommendation
             result = {
@@ -575,8 +578,7 @@ RECOMMENDATION:
                 response_text = stage3_result['response']
                 
                 # Parse ranking
-                from council import parse_ranking_from_text
-                ranking = parse_ranking_from_text(response_text)
+                ranking = council.parse_ranking_from_text(response_text)
                 result['ranking'] = ranking
                 
                 # Parse recommendation
