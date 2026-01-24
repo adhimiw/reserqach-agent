@@ -41,11 +41,11 @@ def run_analysis(dataset_path: str, target_column: str = None,
     print(f"{'='*60}\n")
     
     try:
-        # Create pipeline based on council setting
+        # Create pipeline (always use EnhancedAnalysisPipeline to benefit from agents)
+        from analysis_engine import EnhancedAnalysisPipeline
+        pipeline = EnhancedAnalysisPipeline(dataset_path, use_council=use_council)
+        
         if use_council:
-            from analysis_engine import EnhancedAnalysisPipeline
-            pipeline = EnhancedAnalysisPipeline(dataset_path, use_council=True)
-            
             # Import asyncio if using council
             import asyncio
             results = asyncio.run(pipeline.run_full_pipeline_with_council(
@@ -53,14 +53,12 @@ def run_analysis(dataset_path: str, target_column: str = None,
                 generate_word=generate_word
             ))
         else:
-            # Create and run standard pipeline
-            pipeline = AnalysisPipeline(dataset_path)
-            
-            # Run full analysis
-            results = pipeline.run_full_pipeline(
+            # Run full analysis (it will use agents if council is False)
+            import asyncio
+            results = asyncio.run(pipeline.run_full_pipeline_with_council(
                 target_column=target_column,
                 generate_word=generate_word
-            )
+            ))
         
         # Print summary
         print(f"\n{'='*60}")

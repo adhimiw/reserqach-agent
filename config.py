@@ -65,20 +65,10 @@ class Config:
     INCLUDE_VISUALIZATIONS = True  # Embed plots in reports
     
     # ============== MCP Server Configurations ==============
-    # Pandas MCP Server (will be implemented)
-    PANDAS_MCP_STDIO = True
-    PANDAS_MCP_PORT = 12308
-    
-    # Jupyter MCP Server (will be implemented)
-    JUPYTER_MCP_STDIO = True
-    JUPYTER_MCP_PORT = 12309
-    
-    # Word MCP Server
-    WORD_MCP_STDIO = True
-    WORD_MCP_PORT = 12307
-    
-    # Perplexity MCP
-    PERPLEXITY_MCP_STDIO = True
+    # Docker MCP Gateway (Unified access to all tools)
+    DOCKER_MCP_ENABLED = True
+    DOCKER_MCP_COMMAND = "docker"
+    DOCKER_MCP_ARGS = ["mcp", "gateway", "run"]
     
     # ChromaDB for RAG
     CHROMADB_PERSIST_DIR = "output/chromadb"
