@@ -1,6 +1,8 @@
 """
 LLM Council Integration for Data Science System
 Integrates LLM Council (multi-agent consensus) into analysis workflow
+Uses multiple LLM providers: Gemini, Mistral, Cohere, OpenRouter
+Based on Karpathy's LLM Council: https://github.com/karpathy/llm-council
 """
 
 import asyncio
@@ -8,6 +10,14 @@ from typing import List, Dict, Any, Optional, Tuple
 import logging
 import sys
 import os
+import json
+import re
+import httpx
+from collections import defaultdict
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Add project to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -33,27 +43,592 @@ except ImportError:
 
 logger = logging.getLogger("LLMCouncilIntegration")
 
+# ============================================================================
+# MULTI-PROVIDER LLM COUNCIL (Inspired by Karpathy's llm-council)
+# ============================================================================
+
+# API Keys
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+
+# API URLs
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+COHERE_API_URL = "https://api.cohere.com/v2/chat"
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Council members - diverse models from different providers
+COUNCIL_MODELS = [
+    {"provider": "mistral", "model": "mistral-small-latest", "name": "Mistral Small"},
+    {"provider": "cohere", "model": "command-r7b-12-2024", "name": "Cohere Command-R"},
+    {"provider": "openrouter", "model": "mistralai/devstral-2512:free", "name": "Devstral (OpenRouter)"},
+    {"provider": "gemini", "model": "gemini-flash-latest", "name": "Gemini Flash"},
+]
+
+# Chairman model - synthesizes final response  
+CHAIRMAN_MODEL = {"provider": "mistral", "model": "mistral-small-latest", "name": "Mistral Small"}
+
+# Fallback models per provider
+FALLBACK_MODELS = {
+    "gemini": ["gemini-2.5-flash", "gemini-2.0-flash"],
+    "mistral": ["mistral-tiny-latest", "open-mistral-nemo"],
+    "cohere": ["c4ai-aya-expanse-8b"],
+    "openrouter": ["liquid/lfm-2.5-1.2b-instruct:free", "nvidia/nemotron-3-nano-30b-a3b:free"],
+}
+
+
+async def query_mistral_model(
+    model: str,
+    prompt: str,
+    timeout: float = 60.0,
+    temperature: float = 0.7,
+    max_retries: int = 2
+) -> Optional[Dict[str, Any]]:
+    """Query Mistral API."""
+    if not MISTRAL_API_KEY:
+        logger.error("MISTRAL_API_KEY not set")
+        return None
+    
+    headers = {
+        "Authorization": f"Bearer {MISTRAL_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+        "max_tokens": 4096
+    }
+    
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(MISTRAL_API_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                return {"content": content, "model_used": model, "provider": "mistral"}
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429 and attempt < max_retries - 1:
+                await asyncio.sleep(5 * (attempt + 1))
+                continue
+            logger.error(f"Mistral error ({model}): {e.response.status_code}")
+            break
+        except Exception as e:
+            logger.error(f"Mistral error ({model}): {e}")
+            break
+    
+    # Try fallbacks
+    for fallback in FALLBACK_MODELS.get("mistral", []):
+        try:
+            payload["model"] = fallback
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(MISTRAL_API_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                logger.info(f"Used Mistral fallback: {fallback}")
+                return {"content": content, "model_used": fallback, "provider": "mistral"}
+        except:
+            continue
+    return None
+
+
+async def query_cohere_model(
+    model: str,
+    prompt: str,
+    timeout: float = 60.0,
+    temperature: float = 0.7,
+    max_retries: int = 2
+) -> Optional[Dict[str, Any]]:
+    """Query Cohere API."""
+    if not COHERE_API_KEY:
+        logger.error("COHERE_API_KEY not set")
+        return None
+    
+    headers = {
+        "Authorization": f"Bearer {COHERE_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 4096
+    }
+    
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(COHERE_API_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                content = data.get("message", {}).get("content", [{}])[0].get("text", "")
+                return {"content": content, "model_used": model, "provider": "cohere"}
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429 and attempt < max_retries - 1:
+                await asyncio.sleep(5 * (attempt + 1))
+                continue
+            logger.error(f"Cohere error ({model}): {e.response.status_code}")
+            break
+        except Exception as e:
+            logger.error(f"Cohere error ({model}): {e}")
+            break
+    
+    # Try fallbacks
+    for fallback in FALLBACK_MODELS.get("cohere", []):
+        try:
+            payload["model"] = fallback
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(COHERE_API_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                content = data.get("message", {}).get("content", [{}])[0].get("text", "")
+                logger.info(f"Used Cohere fallback: {fallback}")
+                return {"content": content, "model_used": fallback, "provider": "cohere"}
+        except:
+            continue
+    return None
+
+
+async def query_openrouter_model(
+    model: str,
+    prompt: str,
+    timeout: float = 60.0,
+    temperature: float = 0.7,
+    max_retries: int = 2
+) -> Optional[Dict[str, Any]]:
+    """Query OpenRouter API."""
+    if not OPENROUTER_API_KEY:
+        logger.error("OPENROUTER_API_KEY not set")
+        return None
+    
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+        "max_tokens": 4096
+    }
+    
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(OPENROUTER_API_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                return {"content": content, "model_used": model, "provider": "openrouter"}
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429 and attempt < max_retries - 1:
+                await asyncio.sleep(5 * (attempt + 1))
+                continue
+            logger.error(f"OpenRouter error ({model}): {e.response.status_code}")
+            break
+        except Exception as e:
+            logger.error(f"OpenRouter error ({model}): {e}")
+            break
+    
+    # Try fallbacks
+    for fallback in FALLBACK_MODELS.get("openrouter", []):
+        try:
+            payload["model"] = fallback
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(OPENROUTER_API_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                logger.info(f"Used OpenRouter fallback: {fallback}")
+                return {"content": content, "model_used": fallback, "provider": "openrouter"}
+        except:
+            continue
+    return None
+
+
+async def query_gemini_model(
+    model: str,
+    prompt: str,
+    timeout: float = 120.0,
+    temperature: float = 0.7,
+    max_retries: int = 2,
+    use_fallback: bool = True
+) -> Optional[Dict[str, Any]]:
+    """Query Gemini API."""
+    if not GEMINI_API_KEY:
+        logger.error("GEMINI_API_KEY not set")
+        return None
+    
+    models_to_try = [model]
+    if use_fallback:
+        models_to_try.extend(FALLBACK_MODELS.get("gemini", []))
+    
+    for current_model in models_to_try:
+        url = f"{GEMINI_API_URL}/{current_model}:generateContent?key={GEMINI_API_KEY}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": temperature, "maxOutputTokens": 8192}
+        }
+        
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(url, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    if "candidates" in data and len(data["candidates"]) > 0:
+                        candidate = data["candidates"][0]
+                        if "content" in candidate and "parts" in candidate["content"]:
+                            parts = candidate["content"]["parts"]
+                            if len(parts) > 0 and "text" in parts[0]:
+                                return {"content": parts[0]["text"], "model_used": current_model, "provider": "gemini"}
+                    break
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(5 * (attempt + 1))
+                        continue
+                    break
+                break
+            except:
+                break
+    return None
+
+
+async def query_model(model_config: Dict[str, str], prompt: str) -> Optional[Dict[str, Any]]:
+    """
+    Query a model based on its provider configuration.
+    
+    Args:
+        model_config: Dict with 'provider', 'model', 'name' keys
+        prompt: The prompt to send
+    
+    Returns:
+        Response dict with 'content', 'model_used', 'provider' keys
+    """
+    provider = model_config["provider"]
+    model = model_config["model"]
+    
+    if provider == "mistral":
+        return await query_mistral_model(model, prompt)
+    elif provider == "cohere":
+        return await query_cohere_model(model, prompt)
+    elif provider == "openrouter":
+        return await query_openrouter_model(model, prompt)
+    elif provider == "gemini":
+        return await query_gemini_model(model, prompt)
+    else:
+        logger.error(f"Unknown provider: {provider}")
+        return None
+
+
+async def query_council_models_parallel(
+    models: List[Dict[str, str]],
+    prompt: str,
+    stagger_delay: float = 1.0
+) -> Dict[str, Optional[Dict[str, Any]]]:
+    """
+    Query all council models with staggered requests.
+    
+    Args:
+        models: List of model configurations
+        prompt: Prompt to send to each model
+        stagger_delay: Delay between requests
+    
+    Returns:
+        Dict mapping model name to response
+    """
+    results = {}
+    
+    for i, model_config in enumerate(models):
+        if i > 0:
+            await asyncio.sleep(stagger_delay)
+        
+        model_name = model_config["name"]
+        logger.info(f"  Querying {model_name} ({model_config['provider']})...")
+        response = await query_model(model_config, prompt)
+        results[model_name] = response
+    
+    return results
+
+
+async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
+    """
+    Stage 1: Collect individual responses from all council models.
+    """
+    logger.info(f"Stage 1: Collecting responses from {len(COUNCIL_MODELS)} council models")
+    
+    responses = await query_council_models_parallel(COUNCIL_MODELS, user_query)
+    
+    stage1_results = []
+    for model_name, response in responses.items():
+        if response is not None:
+            stage1_results.append({
+                "model": model_name,
+                "provider": response.get("provider", "unknown"),
+                "model_used": response.get("model_used", "unknown"),
+                "response": response.get("content", "")
+            })
+            logger.info(f"  ✓ {model_name} responded")
+        else:
+            logger.warning(f"  ✗ {model_name} failed to respond")
+    
+    return stage1_results
+
+
+async def stage2_collect_rankings(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+    """
+    Stage 2: Each council model ranks the anonymized responses.
+    """
+    logger.info("Stage 2: Collecting peer rankings from council")
+    
+    labels = [chr(65 + i) for i in range(len(stage1_results))]
+    label_to_model = {
+        f"Response {label}": result["model"]
+        for label, result in zip(labels, stage1_results)
+    }
+    
+    responses_text = "\n\n".join([
+        f"Response {label}:\n{result['response'][:2000]}"
+        for label, result in zip(labels, stage1_results)
+    ])
+    
+    ranking_prompt = f"""You are evaluating different responses to the following question:
+
+Question: {user_query}
+
+Here are the responses from different models (anonymized):
+
+{responses_text}
+
+Your task:
+1. Briefly evaluate each response (what it does well and poorly).
+2. At the end, provide a final ranking.
+
+IMPORTANT: Your final ranking MUST be formatted EXACTLY as:
+FINAL RANKING:
+1. Response X
+2. Response Y
+(etc.)
+
+Now provide your evaluation and ranking:"""
+    
+    responses = await query_council_models_parallel(COUNCIL_MODELS, ranking_prompt)
+    
+    stage2_results = []
+    for model_name, response in responses.items():
+        if response is not None:
+            full_text = response.get("content", "")
+            parsed = parse_ranking_from_text(full_text)
+            stage2_results.append({
+                "model": model_name,
+                "ranking": full_text,
+                "parsed_ranking": parsed
+            })
+            logger.info(f"  ✓ {model_name} provided ranking")
+    
+    return stage2_results, label_to_model
+
+
+async def stage3_synthesize_final(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    stage2_results: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Stage 3: Chairman synthesizes final response.
+    """
+    logger.info(f"Stage 3: Chairman ({CHAIRMAN_MODEL['name']}) synthesizing final response")
+    
+    stage1_text = "\n\n".join([
+        f"Model: {result['model']} ({result['provider']})\nResponse: {result['response'][:1500]}"
+        for result in stage1_results
+    ])
+    
+    stage2_text = "\n\n".join([
+        f"Model: {result['model']}\nRanking: {result['ranking'][:1000]}"
+        for result in stage2_results
+    ])
+    
+    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses and ranked each other.
+
+Original Question: {user_query}
+
+STAGE 1 - Individual Responses:
+{stage1_text}
+
+STAGE 2 - Peer Rankings:
+{stage2_text}
+
+Synthesize all information into a single, comprehensive, accurate answer. Consider:
+- Individual responses and their insights
+- Peer rankings and response quality
+- Patterns of agreement or disagreement
+
+Provide a clear, well-reasoned final answer:"""
+    
+    response = await query_model(CHAIRMAN_MODEL, chairman_prompt)
+    
+    if response is None:
+        return {
+            "model": CHAIRMAN_MODEL["name"],
+            "response": "Error: Unable to generate final synthesis."
+        }
+    
+    return {
+        "model": CHAIRMAN_MODEL["name"],
+        "provider": response.get("provider", "unknown"),
+        "response": response.get("content", "")
+    }
+
+
+def parse_ranking_from_text(ranking_text: str) -> List[str]:
+    """
+    Parse the FINAL RANKING section from the model's response.
+    
+    Args:
+        ranking_text: The full text response from the model
+    
+    Returns:
+        List of response labels in ranked order
+    """
+    # Look for "FINAL RANKING:" section
+    if "FINAL RANKING:" in ranking_text:
+        parts = ranking_text.split("FINAL RANKING:")
+        if len(parts) >= 2:
+            ranking_section = parts[1]
+            # Try to extract numbered list format (e.g., "1. Response A")
+            numbered_matches = re.findall(r'\d+\.\s*Response [A-Z]', ranking_section)
+            if numbered_matches:
+                return [re.search(r'Response [A-Z]', m).group() for m in numbered_matches]
+            
+            # Fallback: Extract all "Response X" patterns in order
+            matches = re.findall(r'Response [A-Z]', ranking_section)
+            return matches
+    
+    # Fallback: try to find any "Response X" patterns in order
+    matches = re.findall(r'Response [A-Z]', ranking_text)
+    return matches
+
+
+def calculate_aggregate_rankings(
+    stage2_results: List[Dict[str, Any]],
+    label_to_model: Dict[str, str]
+) -> List[Dict[str, Any]]:
+    """
+    Calculate aggregate rankings across all models.
+    """
+    model_positions = defaultdict(list)
+    
+    for ranking in stage2_results:
+        parsed_ranking = ranking.get("parsed_ranking", [])
+        
+        for position, label in enumerate(parsed_ranking, start=1):
+            if label in label_to_model:
+                model_name = label_to_model[label]
+                model_positions[model_name].append(position)
+    
+    aggregate = []
+    for model, positions in model_positions.items():
+        if positions:
+            avg_rank = sum(positions) / len(positions)
+            aggregate.append({
+                "model": model,
+                "average_rank": round(avg_rank, 2),
+                "rankings_count": len(positions)
+            })
+    
+    aggregate.sort(key=lambda x: x["average_rank"])
+    return aggregate
+
+
+async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
+    """
+    Run the complete 3-stage multi-provider council process.
+    
+    Args:
+        user_query: The user's question
+    
+    Returns:
+        Tuple of (stage1_results, stage2_results, stage3_result, metadata)
+    """
+    logger.info("=" * 60)
+    logger.info("Starting Multi-Provider LLM Council (3-stage process)")
+    logger.info("=" * 60)
+    
+    # Stage 1: Collect individual responses
+    stage1_results = await stage1_collect_responses(user_query)
+    
+    if not stage1_results:
+        return [], [], {
+            "model": "error",
+            "response": "All models failed to respond. Please check your API keys."
+        }, {}
+    
+    # Stage 2: Collect rankings
+    stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results)
+    
+    # Calculate aggregate rankings
+    aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+    
+    # Stage 3: Synthesize final answer
+    stage3_result = await stage3_synthesize_final(
+        user_query,
+        stage1_results,
+        stage2_results
+    )
+    
+    # Prepare metadata
+    council_model_names = [m["name"] for m in COUNCIL_MODELS]
+    metadata = {
+        "label_to_model": label_to_model,
+        "aggregate_rankings": aggregate_rankings,
+        "council_models": council_model_names,
+        "chairman_model": CHAIRMAN_MODEL["name"]
+    }
+    
+    logger.info("=" * 60)
+    logger.info("Multi-Provider LLM Council completed")
+    logger.info(f"  - Stage 1 responses: {len(stage1_results)}")
+    logger.info(f"  - Stage 2 rankings: {len(stage2_results)}")
+    logger.info(f"  - Chairman: {CHAIRMAN_MODEL['name']}")
+    logger.info("=" * 60)
+    
+    return stage1_results, stage2_results, stage3_result, metadata
+
+
+# Alias for backwards compatibility
+run_full_gemini_council = run_full_council
+
 
 class LLMCouncilAdapter:
-    """Adapter for LLM Council to work with Data Science System"""
+    """Adapter for Multi-Provider LLM Council to work with Data Science System"""
     
     def __init__(self, council_backend_path: str = None):
         """
-        Initialize LLM Council adapter
+        Initialize LLM Council adapter (now using multiple LLM providers)
         
         Args:
-            council_backend_path: Path to llm-council backend
+            council_backend_path: Deprecated - no longer used (kept for backwards compatibility)
         """
-        self.council_backend_path = council_backend_path or "/home/engine/project/llm-council/backend"
         self.enabled = True
         
-        # Initialize API manager
+        # Initialize API manager for logging (optional)
         self.api_manager = None
         self.token_logger = None
         self.health_checker = None
         
         if HAS_API_MANAGER:
-            # Mock config for API manager
             mock_config = {
                 "PERPLEXITY_API_KEY": os.getenv("PERPLEXITY_API_KEY", ""),
                 "MISTRAL_API_KEY": os.getenv("MISTRAL_API_KEY", ""),
@@ -69,12 +644,18 @@ class LLMCouncilAdapter:
             except Exception as e:
                 logger.warning(f"Failed to initialize API manager: {e}")
         
-        logger.info(f"LLM Council adapter initialized with backend: {self.council_backend_path}")
+        # Verify Gemini API key is available
+        if not GEMINI_API_KEY:
+            logger.warning("GEMINI_API_KEY not set - LLM Council will use mock responses")
+            self.enabled = False
+        else:
+            logger.info(f"Gemini LLM Council initialized with models: {COUNCIL_MODELS}")
+            logger.info(f"Chairman model: {CHAIRMAN_MODEL}")
     
     async def generate_hypotheses_with_council(self, dataset_info: Dict[str, Any],
                                            max_hypotheses: int = 50) -> List[Dict[str, Any]]:
         """
-        Generate hypotheses using LLM Council consensus
+        Generate hypotheses using Gemini LLM Council consensus
         
         Args:
             dataset_info: Dataset information (shape, columns, types, etc.)
@@ -84,10 +665,10 @@ class LLMCouncilAdapter:
             List of hypotheses generated by council consensus
         """
         if not self.enabled:
-            logger.info("LLM Council disabled, using single LLM")
-            return []
+            logger.info("LLM Council disabled, using mock hypotheses")
+            return self._generate_mock_hypotheses(dataset_info, max_hypotheses)
         
-        logger.info(f"Generating hypotheses with LLM Council consensus (max: {max_hypotheses})")
+        logger.info(f"Generating hypotheses with Gemini LLM Council (max: {max_hypotheses})")
         
         # Build prompt for hypothesis generation
         prompt = f"""You are a team of expert data scientists analyzing a dataset.
@@ -110,104 +691,97 @@ Generate diverse hypotheses covering different aspects of data. Focus on insight
 
 Format each hypothesis as a JSON object with these fields: type, columns, hypothesis, test_method, reasoning.
 
-Return all hypotheses as a JSON array.
+Return all hypotheses as a JSON array. Start your response with [ and end with ].
 """
         
-        # Check if we have API manager available for LLM Council
-        if not self.api_manager:
-            logger.warning("API manager not available, cannot use LLM Council")
-            # Fallback to mock hypotheses
-            return self._generate_mock_hypotheses(dataset_info, max_hypotheses)
-        
-        # Use LLM Council backend
         try:
-            # Try to import from llm-council backend
-            sys.path.insert(0, self.council_backend_path)
-            
-            # Import the local council module
-            import council
-            
-            # Run LLM Council for hypothesis generation
-            stage1_results, stage2_results, stage3_result, metadata = await council.run_full_council(prompt)
+            # Run Gemini LLM Council
+            stage1_results, stage2_results, stage3_result, metadata = await run_full_gemini_council(prompt)
             
             # Parse final synthesis for hypotheses
-            hypotheses = []
+            hypotheses = self._parse_hypotheses_from_response(
+                stage3_result, metadata, max_hypotheses
+            )
             
-            if stage3_result and 'response' in stage3_result:
-                final_response = stage3_result['response']
-                
-                # Try to extract JSON from final response
-                import json
-                import re
-                
-                # Look for JSON blocks
-                json_matches = re.findall(r'\{[^{}]*\}', final_response)
-                
-                for json_match in json_matches:
-                    try:
-                        # Parse as JSON array
-                        hypotheses_data = json.loads(f"[{json_match}]")
-                        
-                        if isinstance(hypotheses_data, list):
-                            # Filter and structure each hypothesis
-                            for h_data in hypotheses_data[:max_hypotheses]:
-                                if isinstance(h_data, dict):
-                                    hypothesis = {
-                                        "id": f"consensus_hypothesis_{len(hypotheses) + 1}",
-                                        "type": h_data.get("type", self._guess_hypothesis_type(str(h_data.get("hypothesis", "")))),
-                                        "columns": h_data.get("columns", []),
-                                        "hypothesis": h_data.get("hypothesis", str(h_data.get("hypothesis", "N/A")))[:500],
-                                        "test_method": h_data.get("test_method", "To be determined"),
-                                        "reasoning": f"Generated by LLM Council consensus from {metadata.get('label_to_model', {}).get('Response A', 'unknown')}'s perspective and other LLM members"
-                                    }
-                                    hypotheses.append(hypothesis)
-                                elif isinstance(h_data, str):
-                                    hypothesis = {
-                                        "id": f"consensus_hypothesis_{len(hypotheses) + 1}",
-                                        "type": self._guess_hypothesis_type(h_data),
-                                        "columns": [],
-                                        "hypothesis": h_data[:500],
-                                        "test_method": "To be determined",
-                                        "reasoning": "Generated by LLM Council consensus"
-                                    }
-                                    hypotheses.append(hypothesis)
-                                elif isinstance(h_data, list):
-                                    for i, h_item in enumerate(h_data):
-                                        if isinstance(h_item, dict):
-                                            hypothesis = {
-                                                "id": f"consensus_hypothesis_{len(hypotheses) + 1}",
-                                                "type": h_item.get("type", self._guess_hypothesis_type(str(h_item.get("hypothesis", "")))),
-                                                "columns": h_item.get("columns", []),
-                                                "hypothesis": str(h_item.get("hypothesis", "N/A"))[:500],
-                                                "test_method": h_item.get("test_method", "To be determined"),
-                                                "reasoning": "Generated by LLM Council consensus"
-                                            }
-                                            hypotheses.append(hypothesis)
-                
-                    except json.JSONDecodeError:
-                        logger.warning(f"Failed to parse hypotheses JSON from council response")
+            # If we got too few hypotheses from the final synthesis, also try stage1 responses
+            if len(hypotheses) < max_hypotheses // 2:
+                for stage1 in stage1_results:
+                    additional = self._extract_hypotheses_from_text(
+                        stage1.get("response", ""), 
+                        max_hypotheses - len(hypotheses)
+                    )
+                    hypotheses.extend(additional)
+                    if len(hypotheses) >= max_hypotheses:
+                        break
             
-            # Log token usage if available
-            if self.token_logger and metadata.get('duration_ms'):
-                # Estimate tokens for the operation
-                estimated_tokens = int(metadata.get('duration_ms', 0) / 10)  # Rough estimate
-                self.token_logger.log_request(
-                    provider="council_backend",
-                    model="unknown",
-                    prompt_tokens=estimated_tokens * 2,  # Prompt + response
-                    completion_tokens=estimated_tokens,
-                    cost=0.0,  # Council backend is external
-                    duration_ms=metadata.get('duration_ms', 0),
-                    success=True
-                )
-            
-            logger.info(f"Generated {len(hypotheses)} hypotheses using LLM Council")
-            return hypotheses
+            logger.info(f"Generated {len(hypotheses)} hypotheses using Gemini LLM Council")
+            return hypotheses[:max_hypotheses]
             
         except Exception as e:
-            logger.error(f"Error in LLM Council hypothesis generation: {e}")
-            # Fallback to mock hypotheses
+            logger.error(f"Error in Gemini LLM Council hypothesis generation: {e}")
             return self._generate_mock_hypotheses(dataset_info, max_hypotheses)
+    
+    def _parse_hypotheses_from_response(self, stage3_result: Dict, metadata: Dict, 
+                                       max_hypotheses: int) -> List[Dict[str, Any]]:
+        """Parse hypotheses from council's final response"""
+        hypotheses = []
+        
+        if not stage3_result or "response" not in stage3_result:
+            return hypotheses
+        
+        final_response = stage3_result["response"]
+        hypotheses = self._extract_hypotheses_from_text(final_response, max_hypotheses)
+        
+        # Add council metadata to each hypothesis
+        for h in hypotheses:
+            h["generated_by"] = "gemini_council"
+            h["council_models"] = metadata.get("council_models", COUNCIL_MODELS)
+        
+        return hypotheses
+    
+    def _extract_hypotheses_from_text(self, text: str, max_count: int) -> List[Dict[str, Any]]:
+        """Extract hypotheses from text response"""
+        hypotheses = []
+        
+        # Try to find JSON array
+        try:
+            # Look for JSON array pattern
+            json_match = re.search(r'\[[\s\S]*\]', text)
+            if json_match:
+                data = json.loads(json_match.group())
+                if isinstance(data, list):
+                    for i, item in enumerate(data[:max_count]):
+                        if isinstance(item, dict):
+                            hypotheses.append({
+                                "id": f"council_hypothesis_{len(hypotheses) + 1}",
+                                "type": item.get("type", self._guess_hypothesis_type(str(item.get("hypothesis", "")))),
+                                "columns": item.get("columns", []),
+                                "hypothesis": str(item.get("hypothesis", ""))[:500],
+                                "test_method": item.get("test_method", "To be determined"),
+                                "reasoning": item.get("reasoning", "Generated by Gemini LLM Council")
+                            })
+        except json.JSONDecodeError:
+            pass
+        
+        # If JSON parsing failed, try to extract individual JSON objects
+        if not hypotheses:
+            json_objects = re.findall(r'\{[^{}]+\}', text)
+            for obj_str in json_objects[:max_count]:
+                try:
+                    item = json.loads(obj_str)
+                    if isinstance(item, dict) and ("hypothesis" in item or "type" in item):
+                        hypotheses.append({
+                            "id": f"council_hypothesis_{len(hypotheses) + 1}",
+                            "type": item.get("type", "general"),
+                            "columns": item.get("columns", []),
+                            "hypothesis": str(item.get("hypothesis", ""))[:500],
+                            "test_method": item.get("test_method", "To be determined"),
+                            "reasoning": item.get("reasoning", "Generated by Gemini LLM Council")
+                        })
+                except json.JSONDecodeError:
+                    continue
+        
+        return hypotheses
     
     def _generate_mock_hypotheses(self, dataset_info: Dict[str, Any], 
                                max_hypotheses: int) -> List[Dict[str, Any]]:
@@ -282,7 +856,7 @@ Return all hypotheses as a JSON array.
     async def generate_insights_with_council(self, analysis_results: Dict[str, Any],
                                          min_insights: int = 50) -> List[Dict[str, Any]]:
         """
-        Generate insights using LLM Council consensus
+        Generate insights using Gemini LLM Council consensus
         
         Args:
             analysis_results: Analysis results (statistical tests, models, etc.)
@@ -292,10 +866,10 @@ Return all hypotheses as a JSON array.
             List of insights generated by council consensus
         """
         if not self.enabled:
-            logger.info("LLM Council disabled, using single LLM")
-            return []
+            logger.info("LLM Council disabled, using mock insights")
+            return self._generate_mock_insights(analysis_results, min_insights)
         
-        logger.info(f"Generating insights with LLM Council consensus (min: {min_insights})")
+        logger.info(f"Generating insights with Gemini LLM Council (min: {min_insights})")
         
         # Build prompt for insight generation
         statistical_summary = self._summarize_statistical_results(analysis_results)
@@ -323,75 +897,98 @@ Focus on insights that are:
 
 Format each insight as a JSON object with these fields: title, type, what, why, how, recommendation.
 
-Return all insights as a JSON array.
+Return all insights as a JSON array. Start your response with [ and end with ].
 """
         
-        if not self.api_manager:
-            logger.warning("API manager not available, cannot use LLM Council")
-            return self._generate_mock_insights(analysis_results, min_insights)
-        
-        # Use LLM Council for insight generation
         try:
-            sys.path.insert(0, self.council_backend_path)
-            # Import the local council module
-            import council
-            
-            # Run LLM Council for insight generation
-            stage1_results, stage2_results, stage3_result, metadata = await council.run_full_council(prompt)
+            # Run Gemini LLM Council
+            stage1_results, stage2_results, stage3_result, metadata = await run_full_gemini_council(prompt)
             
             # Parse final synthesis for insights
-            insights = []
+            insights = self._parse_insights_from_response(
+                stage3_result, metadata, min_insights
+            )
             
-            if stage3_result and 'response' in stage3_result:
-                final_response = stage3_result['response']
-                
-                # Try to extract JSON from final response
-                import json
-                import re
-                
-                # Look for JSON blocks
-                json_matches = re.findall(r'\{[^{}]*\}', final_response)
-                
-                for json_match in json_matches:
-                    try:
-                        # Parse as JSON array
-                        insights_data = json.loads(f"[{json_match}]")
-                        
-                        if isinstance(insights_data, list):
-                            # Filter and structure each insight
-                            for i_data in insights_data[:min_insights]:
-                                if isinstance(i_data, dict):
-                                    insight = {
-                                        "id": f"consensus_insight_{len(insights) + 1}",
-                                        "title": str(i_data.get("title", "N/A"))[:200],
-                                        "type": i_data.get("type", self._guess_insight_type(str(i_data.get("what", "")))),
-                                        "what": str(i_data.get("what", "N/A"))[:500],
-                                        "why": str(i_data.get("why", "Generated by LLM Council consensus from peer review of analysis results"))[:500],
-                                        "how": str(i_data.get("how", "Apply findings according to context and requirements"))[:500],
-                                        "recommendation": str(i_data.get("recommendation", "Use this insight to inform decision-making"))[:500]
-                                    }
-                                    insights.append(insight)
-                                elif isinstance(i_data, str):
-                                    insight = {
-                                        "id": f"consensus_insight_{len(insights) + 1}",
-                                        "title": i_data[:200],
-                                        "type": "general",
-                                        "what": i_data[:500],
-                                        "why": "Generated by LLM Council consensus",
-                                        "how": "Apply according to context",
-                                        "recommendation": "Use to inform decisions"
-                                    }
-                                    insights.append(insight)
-                
-                    except json.JSONDecodeError:
-                        logger.warning("Failed to parse insights JSON from council response")
+            # If we got too few insights from the final synthesis, also try stage1 responses
+            if len(insights) < min_insights // 2:
+                for stage1 in stage1_results:
+                    additional = self._extract_insights_from_text(
+                        stage1.get("response", ""),
+                        min_insights - len(insights)
+                    )
+                    insights.extend(additional)
+                    if len(insights) >= min_insights:
+                        break
             
-            logger.info(f"Generated {len(insights)} insights using LLM Council")
+            logger.info(f"Generated {len(insights)} insights using Gemini LLM Council")
             return insights
             
         except Exception as e:
-            logger.error(f"Error in LLM Council insight generation: {e}")
+            logger.error(f"Error in Gemini LLM Council insight generation: {e}")
             return self._generate_mock_insights(analysis_results, min_insights)
+    
+    def _parse_insights_from_response(self, stage3_result: Dict, metadata: Dict,
+                                     min_insights: int) -> List[Dict[str, Any]]:
+        """Parse insights from council's final response"""
+        insights = []
+        
+        if not stage3_result or "response" not in stage3_result:
+            return insights
+        
+        final_response = stage3_result["response"]
+        insights = self._extract_insights_from_text(final_response, min_insights)
+        
+        # Add council metadata
+        for insight in insights:
+            insight["generated_by"] = "gemini_council"
+            insight["council_models"] = metadata.get("council_models", COUNCIL_MODELS)
+        
+        return insights
+    
+    def _extract_insights_from_text(self, text: str, max_count: int) -> List[Dict[str, Any]]:
+        """Extract insights from text response"""
+        insights = []
+        
+        # Try to find JSON array
+        try:
+            json_match = re.search(r'\[[\s\S]*\]', text)
+            if json_match:
+                data = json.loads(json_match.group())
+                if isinstance(data, list):
+                    for item in data[:max_count]:
+                        if isinstance(item, dict):
+                            insights.append({
+                                "id": f"council_insight_{len(insights) + 1}",
+                                "title": str(item.get("title", "N/A"))[:200],
+                                "type": item.get("type", self._guess_insight_type(str(item.get("what", "")))),
+                                "what": str(item.get("what", ""))[:500],
+                                "why": str(item.get("why", "Generated by Gemini LLM Council"))[:500],
+                                "how": str(item.get("how", "Apply findings according to context"))[:500],
+                                "recommendation": str(item.get("recommendation", "Use this insight to inform decisions"))[:500]
+                            })
+        except json.JSONDecodeError:
+            pass
+        
+        # If JSON parsing failed, try individual objects
+        if not insights:
+            json_objects = re.findall(r'\{[^{}]+\}', text)
+            for obj_str in json_objects[:max_count]:
+                try:
+                    item = json.loads(obj_str)
+                    if isinstance(item, dict) and ("title" in item or "what" in item):
+                        insights.append({
+                            "id": f"council_insight_{len(insights) + 1}",
+                            "title": str(item.get("title", "Insight"))[:200],
+                            "type": item.get("type", "general"),
+                            "what": str(item.get("what", ""))[:500],
+                            "why": str(item.get("why", "Generated by Gemini LLM Council"))[:500],
+                            "how": str(item.get("how", "Apply according to context"))[:500],
+                            "recommendation": str(item.get("recommendation", "Use to inform decisions"))[:500]
+                        })
+                except json.JSONDecodeError:
+                    continue
+        
+        return insights
     
     def _generate_mock_insights(self, analysis_results: Dict[str, Any], 
                               min_insights: int) -> List[Dict[str, Any]]:
@@ -497,7 +1094,7 @@ Return all insights as a JSON array.
     
     async def rank_models_with_council(self, model_results: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Use LLM Council to rank and select best models
+        Use Gemini LLM Council to rank and select best models
         
         Args:
             model_results: Dictionary with model names and their metrics
@@ -509,12 +1106,11 @@ Return all insights as a JSON array.
             logger.info("LLM Council disabled, returning empty ranking")
             return {"council_used": False}
         
-        logger.info("Ranking models with LLM Council consensus")
+        logger.info("Ranking models with Gemini LLM Council consensus")
         
         # Build model summary for prompt
         model_summary = "\n".join([
-            f"- {name}: {metrics.get('model_type', name)}"
-            f"  Metrics: {metrics}"
+            f"- {name}: {metrics.get('model_type', name)}\n  Metrics: {metrics}"
             for name, metrics in model_results.items()
         ])
         
@@ -551,52 +1147,46 @@ RECOMMENDATION:
 [Model name] with [justification]
 """
         
-        # Check if we have API manager available
-        if not self.api_manager:
-            logger.warning("API manager not available, cannot use LLM Council")
-            return {"council_used": False}
-        
-        # Use LLM Council for model ranking
         try:
-            sys.path.insert(0, self.council_backend_path)
-            # Import the local council module
-            import council
+            # Run Gemini LLM Council
+            stage1_results, stage2_results, stage3_result, metadata = await run_full_gemini_council(prompt)
             
-            # Run LLM Council for model ranking
-            stage1_results, stage2_results, stage3_result, metadata = await council.run_full_council(prompt)
-            
-            # Parse final ranking and recommendation
             result = {
                 "council_used": True,
-                "individual_evaluations": stage2_results,
+                "individual_evaluations": stage1_results,
+                "peer_rankings": stage2_results,
                 "final_synthesis": stage3_result,
                 "ranking": [],
-                "recommendation": {}
+                "recommendation": {},
+                "metadata": metadata
             }
             
-            if stage3_result and 'response' in stage3_result:
-                response_text = stage3_result['response']
+            if stage3_result and "response" in stage3_result:
+                response_text = stage3_result["response"]
                 
                 # Parse ranking
-                ranking = council.parse_ranking_from_text(response_text)
-                result['ranking'] = ranking
+                ranking = parse_ranking_from_text(response_text)
+                result["ranking"] = ranking
                 
                 # Parse recommendation
-                import re
                 if "RECOMMENDATION:" in response_text:
                     rec_section = response_text.split("RECOMMENDATION:")[-1]
                     
                     # Try to extract model name
                     for model_name in model_results.keys():
                         if model_name.lower() in rec_section.lower():
-                            result['recommendation'] = {
+                            result["recommendation"] = {
                                 "model": model_name,
-                                "justification": rec_section[:300]
+                                "justification": rec_section[:500].strip()
                             }
                             break
             
-            logger.info(f"Model ranking completed: {len(result['ranking'])} models ranked")
+            logger.info(f"Model ranking completed: {len(result['ranking'])} items ranked")
             return result
+            
+        except Exception as e:
+            logger.error(f"Error in Gemini LLM Council model ranking: {e}")
+            return {"council_used": False, "error": str(e)}
             
         except Exception as e:
             logger.error(f"Error in LLM Council model ranking: {e}")

@@ -540,13 +540,15 @@ The system includes automatic error detection and recovery:
         return word_path
     
     def run_full_pipeline(self, target_column: str = None, 
-                        generate_word: bool = True) -> Dict[str, Any]:
+                        generate_word: bool = True, 
+                        council_code: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Run the complete analysis pipeline
         
         Args:
             target_column: Target variable for modeling (auto-detected if None)
             generate_word: Whether to generate Word document
+            council_code: List of code/prompt/response dicts from LLM Council (optional)
         
         Returns:
             Dictionary with all results
@@ -582,8 +584,14 @@ The system includes automatic error detection and recovery:
             if generate_word:
                 formats.append('word')
             self.generate_reports(formats=formats)
+
+            # Step 9: Save LLM Council code/prompts/responses if provided
+            if council_code:
+                code_path = os.path.join(self.output_dir, 'code', 'llm_council_code.json')
+                with open(code_path, 'w') as f:
+                    json.dump(council_code, f, indent=2)
             
-            # Step 9: Save execution log
+            # Step 10: Save execution log
             self.save_execution_log()
             
             end_time = datetime.now()
