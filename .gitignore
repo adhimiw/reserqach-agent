@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+.uv/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data Science System Outputs
+output/
+analyses/
+logs/
+visualizations/
+*.csv
+*.xlsx
+*.json
+*.parquet
+!requirements.txt
+!config.py
+
+# ChromaDB
+chromadb/
+*.chromadb
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
+execution_log.json
+error_log.json
+
+# Test files
+test_*.csv
+test_*.xlsx
+test_visualizations/
+
+# Environment variables
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+
+# Model files
+*.pkl
+*.joblib
+*.model
