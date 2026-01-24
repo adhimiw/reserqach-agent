@@ -145,7 +145,7 @@ Return all hypotheses as a JSON array.
                 for json_match in json_matches:
                     try:
                         # Parse as JSON array
-                        hypotheses_data = json.loads(f"[{json_match.group()}]")
+                        hypotheses_data = json.loads(f"[{json_match}]")
                         
                         if isinstance(hypotheses_data, list):
                             # Filter and structure each hypothesis
@@ -197,7 +197,7 @@ Return all hypotheses as a JSON array.
                     completion_tokens=estimated_tokens,
                     cost=0.0,  # Council backend is external
                     duration_ms=metadata.get('duration_ms', 0),
-                    operation="generate_hypotheses"
+                    success=True
                 )
             
             logger.info(f"Generated {len(hypotheses)} hypotheses using LLM Council")
@@ -353,7 +353,7 @@ Return all insights as a JSON array.
                 for json_match in json_matches:
                     try:
                         # Parse as JSON array
-                        insights_data = json.loads(f"[{json_match.group()}]")
+                        insights_data = json.loads(f"[{json_match}]")
                         
                         if isinstance(insights_data, list):
                             # Filter and structure each insight
@@ -641,6 +641,14 @@ class EnhancedAnalysisPipeline:
         
         logger.info(f"Enhanced pipeline initialized (Council: {use_council})")
     
+    @property
+    def dataset_name(self):
+        return self.base_pipeline.dataset_name
+    
+    @property
+    def output_dir(self):
+        return self.base_pipeline.output_dir
+    
     async def generate_hypotheses_async(self, max_hypotheses: int = 100) -> List[Dict[str, Any]]:
         """
         Generate hypotheses (with or without LLM Council)
@@ -658,7 +666,35 @@ class EnhancedAnalysisPipeline:
                 dataset_info, max_hypotheses
             )
         else:
-            # Use single LLM (original behavior)
+            # Use Agentic approach with tools
+            from agents import create_hypothesis_generator_agent
+            import json
+            
+            agent = create_hypothesis_generator_agent()
+            dataset_info = self.base_pipeline.results.get('dataset_info', {})
+            
+            prompt = f"""Analyze this dataset and generate {max_hypotheses} testable hypotheses.
+            Dataset Info: {dataset_info}
+            
+            Use your tools to explore the data if needed.
+            Return the hypotheses as a JSON list of objects with fields: type, columns, hypothesis, test_method, reasoning.
+            """
+            
+            try:
+                result = agent.run(prompt)
+                # Parse result if it's a string containing JSON
+                if isinstance(result, str):
+                    import re
+                    json_match = re.search(r'\[.*\]', result, re.DOTALL)
+                    if json_match:
+                        hypotheses = json.loads(json_match.group())
+                        return hypotheses
+                elif isinstance(result, list):
+                    return result
+            except Exception as e:
+                logger.warning(f"Agentic hypothesis generation failed: {e}. Falling back to procedural method.")
+            
+            # Fallback to single LLM (original procedural behavior)
             from analysis_engine import HypothesisGenerator
             
             generator = HypothesisGenerator(self.base_pipeline.df)
@@ -680,7 +716,37 @@ class EnhancedAnalysisPipeline:
                 self.base_pipeline.results, min_insights
             )
         else:
-            # Use single LLM (original behavior)
+            # Use Agentic approach with tools
+            from agents import create_analyzer_agent
+            import json
+            
+            agent = create_analyzer_agent()
+            analysis_results = {
+                'statistical_tests': self.base_pipeline.results['statistical_tests'],
+                'modeling': self.base_pipeline.results.get('models', {})
+            }
+            
+            prompt = f"""Review these analysis results and extract at least {min_insights} actionable insights.
+            Results: {analysis_results}
+            
+            Use your tools to further explore the data if needed.
+            Return the insights as a JSON list of objects with fields: title, type, what, why, how, recommendation.
+            """
+            
+            try:
+                result = agent.run(prompt)
+                if isinstance(result, str):
+                    import re
+                    json_match = re.search(r'\[.*\]', result, re.DOTALL)
+                    if json_match:
+                        insights = json.loads(json_match.group())
+                        return insights
+                elif isinstance(result, list):
+                    return result
+            except Exception as e:
+                logger.warning(f"Agentic insight extraction failed: {e}. Falling back to procedural method.")
+            
+            # Fallback to single LLM (original procedural behavior)
             from analysis_engine import InsightExtractor
             
             extractor = InsightExtractor(self.base_pipeline.df)
@@ -734,6 +800,11 @@ class EnhancedAnalysisPipeline:
         self.base_pipeline.results['hypotheses'] = hypotheses
         self.base_pipeline.results['used_council_for_hypotheses'] = self.use_council
         
+        # Initialize and update heuristic generator for report formatting
+        from analysis_engine import HypothesisGenerator
+        self.base_pipeline.heuristic_generator = HypothesisGenerator(self.base_pipeline.df)
+        self.base_pipeline.heuristic_generator.hypotheses = hypotheses
+        
         # Run statistical tests
         self.base_pipeline.run_statistical_tests()
         
@@ -749,6 +820,11 @@ class EnhancedAnalysisPipeline:
         self.base_pipeline.results['insights'] = insights
         self.base_pipeline.results['used_council_for_insights'] = self.use_council
         
+        # Initialize and update insight extractor for report formatting
+        from analysis_engine import InsightExtractor
+        self.base_pipeline.insight_extractor = InsightExtractor(self.base_pipeline.df)
+        self.base_pipeline.insight_extractor.insights = insights
+        
         # Create visualizations
         self.base_pipeline.create_visualizations()
         
@@ -760,7 +836,7 @@ class EnhancedAnalysisPipeline:
         
         # Log token usage if available
         if HAS_API_MANAGER and self.council_adapter.api_manager:
-            summary = self.council_adapter.api_manager.get_total_cost()
-            logger.info(f"Total estimated API cost: ${summary['total_cost_usd']:.6f}")
+            total_cost = self.council_adapter.api_manager.get_total_cost()
+            logger.info(f"Total estimated API cost: ${total_cost:.6f}")
         
         return self.base_pipeline.results

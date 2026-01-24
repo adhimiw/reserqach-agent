@@ -1,6 +1,6 @@
 """
 Unified MCP Tools Integration for Data Science System
-Consolidates all MCP server connections including Pandas, Jupyter, Perplexity, and Word
+Consolidates all MCP server connections through a single Docker MCP Gateway
 """
 
 import os
@@ -12,116 +12,62 @@ from config import Config
 
 # ============== Helper Functions ==============
 
-def _get_pandas_mcp_tools():
-    """Get Pandas MCP tools for data manipulation"""
-    pandas_mcp_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "pandas_mcp.py")
-    )
-    python_exe = sys.executable
-    
+def _get_docker_mcp_tools():
+    """Get tools from the Docker MCP Gateway"""
+    if not hasattr(Config, 'DOCKER_MCP_ENABLED') or not Config.DOCKER_MCP_ENABLED:
+        return None
+        
     server_params = StdioServerParameters(
-        command=python_exe,
-        args=[pandas_mcp_path],
+        command=Config.DOCKER_MCP_COMMAND,
+        args=Config.DOCKER_MCP_ARGS,
         env=os.environ
     )
-    return ToolCollection.from_mcp(server_params, trust_remote_code=True)
-
-
-def _get_jupyter_mcp_tools():
-    """Get Jupyter MCP tools for code execution and notebook generation"""
-    jupyter_mcp_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "jupyter_mcp.py")
-    )
-    python_exe = sys.executable
-    
-    server_params = StdioServerParameters(
-        command=python_exe,
-        args=[jupyter_mcp_path],
-        env=os.environ
-    )
-    return ToolCollection.from_mcp(server_params, trust_remote_code=True)
-
-
-def _get_perplexity_tools():
-    """Get Perplexity MCP tools for real-time web research and reasoning"""
-    server_params = StdioServerParameters(
-        command="uvx",
-        args=["perplexity-mcp"],
-        env={
-            "PERPLEXITY_API_KEY": Config.PERPLEXITY_API_KEY,
-            "PERPLEXITY_MODEL": Config.PERPLEXITY_MODEL,
-            **os.environ
-        }
-    )
-    return ToolCollection.from_mcp(server_params, trust_remote_code=True)
-
-
-def _get_word_mcp_tools():
-    """Get Word MCP tools for document generation"""
-    word_mcp_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../Office-Word-MCP-Server-main/word_mcp_server.py")
-    )
-    python_exe = sys.executable
-    
-    server_params = StdioServerParameters(
-        command=python_exe,
-        args=[word_mcp_path],
-        env=os.environ
-    )
-    return ToolCollection.from_mcp(server_params, trust_remote_code=True)
-
-
-def _get_filesystem_tools(allowed_directories=None):
-    """Get Filesystem MCP tools for file operations"""
-    if allowed_directories is None:
-        allowed_directories = [Config.OUTPUT_DIR]
-    
-    server_params = StdioServerParameters(
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-filesystem"] + allowed_directories,
-        env=os.environ
-    )
-    return ToolCollection.from_mcp(server_params, trust_remote_code=True)
+    try:
+        return ToolCollection.from_mcp(server_params, trust_remote_code=True)
+    except Exception as e:
+        print(f"Warning: Failed to connect to Docker MCP Gateway: {e}")
+        # Return an empty collection or handle as needed
+        return None
 
 
 # ============== Public API ==============
 
 def get_data_processing_tools():
     """
-    Get all tools needed for data processing (Pandas, Jupyter)
+    Get all tools needed for data processing (via Docker MCP)
     
     Returns:
-        dict: Dictionary with 'pandas' and 'jupyter' tool collections
+        dict: Dictionary with tool collections
     """
+    docker_tools = _get_docker_mcp_tools()
     return {
-        'pandas': _get_pandas_mcp_tools(),
-        'jupyter': _get_jupyter_mcp_tools()
+        'docker_mcp': docker_tools
     }
 
 
 def get_research_tools():
     """
-    Get all tools needed for research (Perplexity, Filesystem)
+    Get all tools needed for research (via Docker MCP)
     
     Returns:
-        dict: Dictionary with 'perplexity' and 'filesystem' tool collections
+        dict: Dictionary with tool collections
     """
+    docker_tools = _get_docker_mcp_tools()
     return {
-        'perplexity': _get_perplexity_tools(),
-        'filesystem': _get_filesystem_tools()
+        'docker_mcp': docker_tools
     }
 
 
 def get_writing_tools():
     """
-    Get all tools needed for writing reports (Word, Filesystem)
+    Get all tools needed for writing reports (via Docker MCP)
     
     Returns:
-        dict: Dictionary with 'word' and 'filesystem' tool collections
+        dict: Dictionary with tool collections
     """
+    docker_tools = _get_docker_mcp_tools()
     return {
-        'word': _get_word_mcp_tools(),
-        'filesystem': _get_filesystem_tools()
+        'docker_mcp': docker_tools
     }
 
 
@@ -132,11 +78,10 @@ def get_all_tools():
     Returns:
         dict: Dictionary with all available tool collections
     """
-    return {
-        **get_data_processing_tools(),
-        **get_research_tools(),
-        **get_writing_tools()
-    }
+    docker_tools = _get_docker_mcp_tools()
+    if docker_tools:
+        return {'docker_mcp': docker_tools}
+    return {}
 
 
 def combine_tool_lists(*tool_collections):
@@ -151,8 +96,14 @@ def combine_tool_lists(*tool_collections):
     """
     combined_tools = []
     for collection in tool_collections:
+        if collection is None:
+            continue
         if hasattr(collection, 'tools'):
             combined_tools.extend(list(collection.tools))
+        elif isinstance(collection, dict):
+            for item in collection.values():
+                if item and hasattr(item, 'tools'):
+                    combined_tools.extend(list(item.tools))
         elif isinstance(collection, list):
             combined_tools.extend(collection)
     return combined_tools

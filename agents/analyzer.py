@@ -5,6 +5,7 @@ Coordinates data loading, hypothesis generation, statistical testing, and modeli
 
 from smolagents import CodeAgent, ToolCallingAgent
 from config import Config
+from tools import get_all_tools, combine_tool_lists
 
 
 def create_analyzer_agent(tools=None, model=None):
@@ -22,7 +23,7 @@ def create_analyzer_agent(tools=None, model=None):
         model = Config.get_model()
     
     if tools is None:
-        tools = []
+        tools = combine_tool_lists(get_all_tools())
     
     return CodeAgent(
         tools=tools,
@@ -76,7 +77,8 @@ def create_hypothesis_generator_agent(tools=None, model=None):
         model = Config.get_model()
     
     if tools is None:
-        tools = []
+        from tools import get_data_processing_tools
+        tools = combine_tool_lists(get_data_processing_tools())
     
     return CodeAgent(
         tools=tools,
@@ -104,7 +106,8 @@ def create_statistical_tester_agent(tools=None, model=None):
         model = Config.get_model()
     
     if tools is None:
-        tools = []
+        from tools import get_data_processing_tools
+        tools = combine_tool_lists(get_data_processing_tools())
     
     return CodeAgent(
         tools=tools,
@@ -132,7 +135,8 @@ def create_model_builder_agent(tools=None, model=None):
         model = Config.get_model()
     
     if tools is None:
-        tools = []
+        from tools import get_data_processing_tools
+        tools = combine_tool_lists(get_data_processing_tools())
     
     return CodeAgent(
         tools=tools,
@@ -160,7 +164,8 @@ def create_visualizer_agent(tools=None, model=None):
         model = Config.get_model()
     
     if tools is None:
-        tools = []
+        from tools import get_data_processing_tools
+        tools = combine_tool_lists(get_data_processing_tools())
     
     return CodeAgent(
         tools=tools,
@@ -173,12 +178,13 @@ def create_visualizer_agent(tools=None, model=None):
     )
 
 
-def create_research_context_agent(model=None):
+def create_research_context_agent(model=None, tools=None):
     """
     Creates agent for real-time research using Perplexity
     
     Args:
         model: LLM model instance (should be Perplexity)
+        tools: List of research tools
     
     Returns:
         ToolCallingAgent configured for web research
@@ -186,7 +192,12 @@ def create_research_context_agent(model=None):
     if model is None:
         model = Config.get_perplexity_model()
     
+    if tools is None:
+        from tools import get_research_tools
+        tools = combine_tool_lists(get_research_tools())
+    
     return ToolCallingAgent(
+        tools=tools,
         model=model,
         name="research_context",
         description="Researches real-world context and explanations for findings using web search and current information"

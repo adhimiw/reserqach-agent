@@ -166,8 +166,8 @@ class ModelBuilder:
         # Feature importance (coefficients)
         feature_importance = pd.DataFrame({
             'feature': self.feature_names,
-            'coefficient': model.coef_
-        }).sort_values('coefficient', key=abs, ascending=False)
+            'importance': np.abs(model.coef_)
+        }).sort_values('importance', ascending=False)
         
         result = {
             "model_type": f"Linear Regression ({regularization})" if regularization else "Linear Regression",
