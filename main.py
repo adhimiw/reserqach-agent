@@ -24,7 +24,7 @@ def setup_environment():
 
 def run_analysis(dataset_path: str, target_column: str = None, 
                 generate_word: bool = True, verbose: bool = False,
-                use_council: bool = False):
+                use_council: bool = False, council_backend: str = None):
     """
     Run autonomous data analysis on a dataset
     
@@ -34,6 +34,7 @@ def run_analysis(dataset_path: str, target_column: str = None,
         generate_word: Whether to generate Word document
         verbose: Whether to show verbose output
         use_council: Whether to use LLM Council for consensus decisions
+        council_backend: Path to llm-council backend
     """
     print(f"\n{'='*60}")
     print(f"ANALYZING DATASET: {os.path.basename(dataset_path)}")
@@ -43,7 +44,11 @@ def run_analysis(dataset_path: str, target_column: str = None,
     try:
         # Create pipeline (always use EnhancedAnalysisPipeline to benefit from agents)
         from analysis_engine import EnhancedAnalysisPipeline
-        pipeline = EnhancedAnalysisPipeline(dataset_path, use_council=use_council)
+        pipeline = EnhancedAnalysisPipeline(
+            dataset_path, 
+            use_council=use_council,
+            council_backend_path=council_backend
+        )
         
         if use_council:
             # Import asyncio if using council
@@ -180,7 +185,8 @@ Examples:
         target_column=args.target_column,
         generate_word=not args.no_word,
         verbose=args.verbose,
-        use_council=args.use_council
+        use_council=args.use_council,
+        council_backend=args.council_backend
     )
 
 
