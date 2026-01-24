@@ -204,22 +204,11 @@ class Config:
     ENABLE_DASHBOARD = True
     
     # ============== MCP Server Configurations ==============
-    # Word MCP Server
-    WORD_MCP_STDIO = True
-    WORD_MCP_PORT = 12307
-    
-    # Browser/Chrome MCP Server
-    BROWSER_MCP_STDIO = False
-    BROWSER_MCP_ENDPOINT = "http://localhost:8765"
-    
-    # Pandas MCP Server
-    PANDAS_MCP_STDIO = True
-    PANDAS_MCP_PORT = 12308
-    
-    # Jupyter MCP Server
-    JUPYTER_MCP_STDIO = True
-    JUPYTER_MCP_PORT = 12309
-    
+    # Docker MCP Gateway (Unified access to all tools)
+    DOCKER_MCP_ENABLED = True
+    DOCKER_MCP_COMMAND = "docker"
+    DOCKER_MCP_ARGS = ["mcp", "gateway", "run"]
+
     # ============== LLM Council Backend ==============
     COUNCIL_BACKEND_PATH = os.path.abspath("/home/engine/project/llm-council/backend")
     COUNCIL_CONFIG_FILE = os.path.join(COUNCIL_BACKEND_PATH, "config.py")

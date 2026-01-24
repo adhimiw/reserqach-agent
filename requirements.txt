@@ -1,7 +1,7 @@
 # Autonomous Data Science System Requirements
 
 # Core LLM & Agent Framework
-smolagents>=1.23.0
+smolagents[mcp]>=1.23.0
 litellm>=1.0.0
 
 # API Clients
@@ -50,6 +50,9 @@ streamlit>=1.28.0
 
 # MCP Support
 mcp>=0.1.0
+mcpadapt>=0.1.20
+jsonref>=1.1.0
+websockets>=15.0.1
 
 # Logging
 rich>=13.0.0
