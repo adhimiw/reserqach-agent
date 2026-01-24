@@ -256,7 +256,7 @@ class LLMAPIManager:
             self.clients["perplexity"] = LLMAPIClient(
                 base_url=self.PROVIDERS["perplexity"]["base_url"],
                 api_key=self.config.get("PERPLEXITY_API_KEY"),
-                model="perplexity/sonar-medium"  # Default model
+                model="sonar-pro"  # Default model
             )
             self.enabled_providers.add("perplexity")
             logger.info("Perplexity API client initialized")
@@ -266,7 +266,7 @@ class LLMAPIManager:
             self.clients["mistral"] = LLMAPIClient(
                 base_url=self.PROVIDERS["mistral"]["base_url"],
                 api_key=self.config.get("MISTRAL_API_KEY"),
-                model="mistral/mistral-large-latest"
+                model="mistral-large-latest"
             )
             self.enabled_providers.add("mistral")
             logger.info("Mistral API client initialized")
@@ -385,8 +385,11 @@ class LLMAPIManager:
             
             # Get pricing for default model
             models = provider_info.get("models", {})
-            default_model = list(models.values())[0]
-            cost_per_1k = default_model.get("cost_per_1k", 0.0)
+            if not models:
+                cost_per_1k = 0.0
+            else:
+                default_model = list(models.values())[0]
+                cost_per_1k = default_model.get("cost_per_1k", 0.0)
             
             # Calculate cost
             provider_cost = (tokens / 1000) * cost_per_1k

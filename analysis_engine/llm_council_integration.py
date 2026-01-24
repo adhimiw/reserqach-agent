@@ -145,7 +145,7 @@ Return all hypotheses as a JSON array.
                 for json_match in json_matches:
                     try:
                         # Parse as JSON array
-                        hypotheses_data = json.loads(f"[{json_match.group()}]")
+                        hypotheses_data = json.loads(f"[{json_match}]")
                         
                         if isinstance(hypotheses_data, list):
                             # Filter and structure each hypothesis
@@ -197,7 +197,7 @@ Return all hypotheses as a JSON array.
                     completion_tokens=estimated_tokens,
                     cost=0.0,  # Council backend is external
                     duration_ms=metadata.get('duration_ms', 0),
-                    operation="generate_hypotheses"
+                    success=True
                 )
             
             logger.info(f"Generated {len(hypotheses)} hypotheses using LLM Council")
@@ -353,7 +353,7 @@ Return all insights as a JSON array.
                 for json_match in json_matches:
                     try:
                         # Parse as JSON array
-                        insights_data = json.loads(f"[{json_match.group()}]")
+                        insights_data = json.loads(f"[{json_match}]")
                         
                         if isinstance(insights_data, list):
                             # Filter and structure each insight
@@ -800,6 +800,11 @@ class EnhancedAnalysisPipeline:
         self.base_pipeline.results['hypotheses'] = hypotheses
         self.base_pipeline.results['used_council_for_hypotheses'] = self.use_council
         
+        # Initialize and update heuristic generator for report formatting
+        from analysis_engine import HypothesisGenerator
+        self.base_pipeline.heuristic_generator = HypothesisGenerator(self.base_pipeline.df)
+        self.base_pipeline.heuristic_generator.hypotheses = hypotheses
+        
         # Run statistical tests
         self.base_pipeline.run_statistical_tests()
         
@@ -814,6 +819,11 @@ class EnhancedAnalysisPipeline:
         insights = await self.extract_insights_async(min_insights=50)
         self.base_pipeline.results['insights'] = insights
         self.base_pipeline.results['used_council_for_insights'] = self.use_council
+        
+        # Initialize and update insight extractor for report formatting
+        from analysis_engine import InsightExtractor
+        self.base_pipeline.insight_extractor = InsightExtractor(self.base_pipeline.df)
+        self.base_pipeline.insight_extractor.insights = insights
         
         # Create visualizations
         self.base_pipeline.create_visualizations()
