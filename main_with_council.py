@@ -65,6 +65,7 @@ async def run_analysis_with_council(dataset_path: str, target_column: str = None
         print(f"{'='*60}")
         print(f"Dataset: {pipeline.base_pipeline.dataset_name}")
         print(f"Output directory: {pipeline.base_pipeline.output_dir}")
+        print(f"Run ID: {pipeline.run_id}")
         print()
         print("Results Summary:")
         print(f"  - Hypotheses generated: {len(results.get('hypotheses', []))}")
@@ -87,8 +88,13 @@ async def run_analysis_with_council(dataset_path: str, target_column: str = None
         print(f"  - Markdown Report: {os.path.join(pipeline.base_pipeline.output_dir, f'{pipeline.base_pipeline.dataset_name}_report.md')}")
         if generate_word:
             print(f"  - Word Document: {os.path.join(pipeline.base_pipeline.output_dir, f'{pipeline.base_pipeline.dataset_name}_report.docx')}")
+        print(f"  - Insights HTML: {os.path.join(pipeline.base_pipeline.output_dir, 'insights', 'insights_report.html')}")
+        print(f"  - Results Snapshot: {os.path.join(pipeline.base_pipeline.output_dir, 'insights', 'results_snapshot.json')}")
+        print(f"  - Run Manifest: {os.path.join(pipeline.base_pipeline.output_dir, 'code', 'run_manifest.json')}")
+        if use_council:
+            print(f"  - Council Trace: {os.path.join(pipeline.base_pipeline.output_dir, 'code', 'llm_council_trace.jsonl')}")
         print(f"  - Visualizations: {os.path.join(pipeline.base_pipeline.output_dir, 'visualizations/')}")
-        print(f"  - Analysis Logs: {os.path.join(pipeline.base_pipeline.output_dir, 'logs/')}")
+        print(f"  - Execution Log: {os.path.join(pipeline.base_pipeline.output_dir, 'logs', 'execution_log.json')}")
         print()
         
         # Model ranking if available
@@ -266,7 +272,7 @@ Examples:
     parser.add_argument(
         "--output", "-o",
         dest="output_dir",
-        help="Output directory for analysis results (default: output/analyses/{dataset_name}/)"
+        help="Output directory for analysis results (default: output/analyses/{dataset_name}/{run_id}/)"
     )
     
     parser.add_argument(

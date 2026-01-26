@@ -39,13 +39,13 @@ python main.py test_sales.csv --target_column sales
 After analysis completes:
 ```bash
 # View Markdown report
-cat output/analyses/test_sales/test_sales_report.md
+cat output/analyses/test_sales/{run_id}/test_sales_report.md
 
 # View visualizations
-ls output/analyses/test_sales/visualizations/
+ls output/analyses/test_sales/{run_id}/visualizations/
 
 # Check execution logs
-cat output/analyses/test_sales/logs/execution_log.json
+cat output/analyses/test_sales/{run_id}/logs/execution_log.json
 ```
 
 ### Start Dashboard
@@ -98,10 +98,13 @@ python main.py your_data.csv --verbose
 ## Output Structure
 
 ```
-output/analyses/{dataset_name}/
+output/analyses/{dataset_name}/{run_id}/
 ├── data/
 │   ├── original.csv          # Your original data
 │   └── cleaned.csv          # Cleaned version
+├── code/
+│   ├── run_manifest.json     # Run metadata + config snapshot
+│   └── llm_council_trace.jsonl  # Council prompts/responses (if enabled)
 ├── visualizations/
 │   ├── dashboard.png         # Overview dashboard
 │   ├── correlation_heatmap.png
@@ -112,13 +115,17 @@ output/analyses/{dataset_name}/
 │   ├── hypotheses.json      # All generated hypotheses
 │   ├── statistical_tests.json
 │   ├── models.json         # Model results
-│   └── insights.json       # Actionable insights
+│   ├── insights.json       # Actionable insights
+│   ├── insights_report.html # Human-readable insights report
+│   └── results_snapshot.json # Full results snapshot
 ├── logs/
 │   ├── execution_log.json   # Complete execution trail
 │   └── error_log.json     # Error and recovery log
 ├── {dataset}_report.md   # Markdown report
 └── {dataset}_report.docx  # Word document
 ```
+
+Each dataset folder also includes a `latest.json` file that points to the most recent run directory.
 
 ## Example Analysis Workflow
 
@@ -129,10 +136,10 @@ python main.py sales_data.csv --target_column revenue
 # 2. Wait for completion (typically 2-5 minutes for small datasets)
 
 # 3. Review the Markdown report
-cat output/analyses/sales_data/sales_data_report.md
+cat output/analyses/sales_data/{run_id}/sales_data_report.md
 
 # 4. Open the Word document
-open output/analyses/sales_data/sales_data_report.docx
+open output/analyses/sales_data/{run_id}/sales_data_report.docx
 
 # 5. Start dashboard to monitor in real-time (next time)
 streamlit run ui/dashboard.py &
@@ -204,8 +211,8 @@ python test_system.py --full   # Test all components
 ### View Logs
 All analyses log everything:
 ```bash
-cat output/analyses/{dataset_name}/logs/execution_log.json
-cat output/analyses/{dataset_name}/logs/error_log.json
+cat output/analyses/{dataset_name}/{run_id}/logs/execution_log.json
+cat output/analyses/{dataset_name}/{run_id}/logs/error_log.json
 ```
 
 ## Next Steps

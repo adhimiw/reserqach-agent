@@ -1,7 +1,7 @@
 """
 LLM Council Integration for Data Science System
 Integrates LLM Council (multi-agent consensus) into analysis workflow
-Uses multiple LLM providers: Gemini, Mistral, Cohere, OpenRouter
+Uses multiple LLM providers: Mistral, Cohere, OpenRouter
 Based on Karpathy's LLM Council: https://github.com/karpathy/llm-council
 """
 
@@ -14,6 +14,7 @@ import json
 import re
 import httpx
 from collections import defaultdict
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -61,19 +62,19 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Council members - diverse models from different providers
 COUNCIL_MODELS = [
+    {"provider": "mistral", "model": "mistral-large-2512", "name": "Mistral Large 2512"},
     {"provider": "mistral", "model": "mistral-small-latest", "name": "Mistral Small"},
     {"provider": "cohere", "model": "command-r7b-12-2024", "name": "Cohere Command-R"},
     {"provider": "openrouter", "model": "mistralai/devstral-2512:free", "name": "Devstral (OpenRouter)"},
-    {"provider": "gemini", "model": "gemini-flash-latest", "name": "Gemini Flash"},
 ]
 
-# Chairman model - synthesizes final response  
-CHAIRMAN_MODEL = {"provider": "mistral", "model": "mistral-small-latest", "name": "Mistral Small"}
+# Chairman model - synthesizes final response
+CHAIRMAN_MODEL = {"provider": "mistral", "model": "mistral-large-2512", "name": "Mistral Large 2512"}
 
 # Fallback models per provider
 FALLBACK_MODELS = {
     "gemini": ["gemini-2.5-flash", "gemini-2.0-flash"],
-    "mistral": ["mistral-tiny-latest", "open-mistral-nemo"],
+    "mistral": ["mistral-large-latest", "mistral-small-latest", "mistral-tiny-latest", "open-mistral-nemo"],
     "cohere": ["c4ai-aya-expanse-8b"],
     "openrouter": ["liquid/lfm-2.5-1.2b-instruct:free", "nvidia/nemotron-3-nano-30b-a3b:free"],
 }
@@ -644,18 +645,34 @@ class LLMCouncilAdapter:
             except Exception as e:
                 logger.warning(f"Failed to initialize API manager: {e}")
         
-        # Verify Gemini API key is available
-        if not GEMINI_API_KEY:
-            logger.warning("GEMINI_API_KEY not set - LLM Council will use mock responses")
+        # Verify at least one provider key is available for council models
+        provider_keys = {
+            "mistral": MISTRAL_API_KEY,
+            "cohere": COHERE_API_KEY,
+            "openrouter": OPENROUTER_API_KEY,
+            "gemini": GEMINI_API_KEY,
+        }
+        providers_in_use = {m["provider"] for m in COUNCIL_MODELS}
+        chairman_provider = CHAIRMAN_MODEL["provider"]
+        providers_in_use.add(chairman_provider)
+        missing_providers = {p for p in providers_in_use if not provider_keys.get(p)}
+        if not provider_keys.get(chairman_provider):
+            logger.warning(f"{chairman_provider.upper()}_API_KEY not set - LLM Council disabled (chairman unavailable)")
+            self.enabled = False
+        elif len(missing_providers) == len(providers_in_use):
+            logger.warning("No API keys set for any LLM Council providers - using mock responses")
             self.enabled = False
         else:
-            logger.info(f"Gemini LLM Council initialized with models: {COUNCIL_MODELS}")
+            if missing_providers:
+                logger.warning(f"Missing API keys for providers: {', '.join(sorted(missing_providers))}")
+            logger.info(f"LLM Council initialized with models: {COUNCIL_MODELS}")
             logger.info(f"Chairman model: {CHAIRMAN_MODEL}")
     
     async def generate_hypotheses_with_council(self, dataset_info: Dict[str, Any],
-                                           max_hypotheses: int = 50) -> List[Dict[str, Any]]:
+                                           max_hypotheses: int = 50,
+                                           trace_dir: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Generate hypotheses using Gemini LLM Council consensus
+        Generate hypotheses using LLM Council consensus
         
         Args:
             dataset_info: Dataset information (shape, columns, types, etc.)
@@ -668,7 +685,7 @@ class LLMCouncilAdapter:
             logger.info("LLM Council disabled, using mock hypotheses")
             return self._generate_mock_hypotheses(dataset_info, max_hypotheses)
         
-        logger.info(f"Generating hypotheses with Gemini LLM Council (max: {max_hypotheses})")
+        logger.info(f"Generating hypotheses with LLM Council (max: {max_hypotheses})")
         
         # Build prompt for hypothesis generation
         prompt = f"""You are a team of expert data scientists analyzing a dataset.
@@ -695,8 +712,26 @@ Return all hypotheses as a JSON array. Start your response with [ and end with ]
 """
         
         try:
-            # Run Gemini LLM Council
-            stage1_results, stage2_results, stage3_result, metadata = await run_full_gemini_council(prompt)
+            # Run LLM Council
+            stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
+            self._save_council_trace(trace_dir, {
+                "timestamp": datetime.now().isoformat(),
+                "task": "insights",
+                "prompt": prompt,
+                "stage1_results": stage1_results,
+                "stage2_results": stage2_results,
+                "stage3_result": stage3_result,
+                "metadata": metadata
+            })
+            self._save_council_trace(trace_dir, {
+                "timestamp": datetime.now().isoformat(),
+                "task": "hypotheses",
+                "prompt": prompt,
+                "stage1_results": stage1_results,
+                "stage2_results": stage2_results,
+                "stage3_result": stage3_result,
+                "metadata": metadata
+            })
             
             # Parse final synthesis for hypotheses
             hypotheses = self._parse_hypotheses_from_response(
@@ -714,11 +749,11 @@ Return all hypotheses as a JSON array. Start your response with [ and end with ]
                     if len(hypotheses) >= max_hypotheses:
                         break
             
-            logger.info(f"Generated {len(hypotheses)} hypotheses using Gemini LLM Council")
+            logger.info(f"Generated {len(hypotheses)} hypotheses using LLM Council")
             return hypotheses[:max_hypotheses]
             
         except Exception as e:
-            logger.error(f"Error in Gemini LLM Council hypothesis generation: {e}")
+            logger.error(f"Error in LLM Council hypothesis generation: {e}")
             return self._generate_mock_hypotheses(dataset_info, max_hypotheses)
     
     def _parse_hypotheses_from_response(self, stage3_result: Dict, metadata: Dict, 
@@ -734,7 +769,7 @@ Return all hypotheses as a JSON array. Start your response with [ and end with ]
         
         # Add council metadata to each hypothesis
         for h in hypotheses:
-            h["generated_by"] = "gemini_council"
+            h["generated_by"] = "llm_council"
             h["council_models"] = metadata.get("council_models", COUNCIL_MODELS)
         
         return hypotheses
@@ -758,7 +793,7 @@ Return all hypotheses as a JSON array. Start your response with [ and end with ]
                                 "columns": item.get("columns", []),
                                 "hypothesis": str(item.get("hypothesis", ""))[:500],
                                 "test_method": item.get("test_method", "To be determined"),
-                                "reasoning": item.get("reasoning", "Generated by Gemini LLM Council")
+                                "reasoning": item.get("reasoning", "Generated by LLM Council")
                             })
         except json.JSONDecodeError:
             pass
@@ -776,7 +811,7 @@ Return all hypotheses as a JSON array. Start your response with [ and end with ]
                             "columns": item.get("columns", []),
                             "hypothesis": str(item.get("hypothesis", ""))[:500],
                             "test_method": item.get("test_method", "To be determined"),
-                            "reasoning": item.get("reasoning", "Generated by Gemini LLM Council")
+                            "reasoning": item.get("reasoning", "Generated by LLM Council")
                         })
                 except json.JSONDecodeError:
                     continue
@@ -852,11 +887,24 @@ Return all hypotheses as a JSON array. Start your response with [ and end with ]
             return "model"
         else:
             return "general"
+
+    def _save_council_trace(self, trace_dir: Optional[str], payload: Dict[str, Any]) -> None:
+        """Append council prompts and responses to a trace file."""
+        if not trace_dir:
+            return
+        try:
+            trace_path = os.path.join(trace_dir, 'code', 'llm_council_trace.jsonl')
+            os.makedirs(os.path.dirname(trace_path), exist_ok=True)
+            with open(trace_path, 'a') as f:
+                f.write(json.dumps(payload, default=str) + "\n")
+        except Exception as e:
+            logger.warning(f"Failed to write council trace: {e}")
     
     async def generate_insights_with_council(self, analysis_results: Dict[str, Any],
-                                         min_insights: int = 50) -> List[Dict[str, Any]]:
+                                         min_insights: int = 50,
+                                         trace_dir: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Generate insights using Gemini LLM Council consensus
+        Generate insights using LLM Council consensus
         
         Args:
             analysis_results: Analysis results (statistical tests, models, etc.)
@@ -869,7 +917,7 @@ Return all hypotheses as a JSON array. Start your response with [ and end with ]
             logger.info("LLM Council disabled, using mock insights")
             return self._generate_mock_insights(analysis_results, min_insights)
         
-        logger.info(f"Generating insights with Gemini LLM Council (min: {min_insights})")
+        logger.info(f"Generating insights with LLM Council (min: {min_insights})")
         
         # Build prompt for insight generation
         statistical_summary = self._summarize_statistical_results(analysis_results)
@@ -901,8 +949,8 @@ Return all insights as a JSON array. Start your response with [ and end with ].
 """
         
         try:
-            # Run Gemini LLM Council
-            stage1_results, stage2_results, stage3_result, metadata = await run_full_gemini_council(prompt)
+            # Run LLM Council
+            stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
             
             # Parse final synthesis for insights
             insights = self._parse_insights_from_response(
@@ -920,11 +968,11 @@ Return all insights as a JSON array. Start your response with [ and end with ].
                     if len(insights) >= min_insights:
                         break
             
-            logger.info(f"Generated {len(insights)} insights using Gemini LLM Council")
+            logger.info(f"Generated {len(insights)} insights using LLM Council")
             return insights
             
         except Exception as e:
-            logger.error(f"Error in Gemini LLM Council insight generation: {e}")
+            logger.error(f"Error in LLM Council insight generation: {e}")
             return self._generate_mock_insights(analysis_results, min_insights)
     
     def _parse_insights_from_response(self, stage3_result: Dict, metadata: Dict,
@@ -940,7 +988,7 @@ Return all insights as a JSON array. Start your response with [ and end with ].
         
         # Add council metadata
         for insight in insights:
-            insight["generated_by"] = "gemini_council"
+            insight["generated_by"] = "llm_council"
             insight["council_models"] = metadata.get("council_models", COUNCIL_MODELS)
         
         return insights
@@ -962,7 +1010,7 @@ Return all insights as a JSON array. Start your response with [ and end with ].
                                 "title": str(item.get("title", "N/A"))[:200],
                                 "type": item.get("type", self._guess_insight_type(str(item.get("what", "")))),
                                 "what": str(item.get("what", ""))[:500],
-                                "why": str(item.get("why", "Generated by Gemini LLM Council"))[:500],
+                                "why": str(item.get("why", "Generated by LLM Council"))[:500],
                                 "how": str(item.get("how", "Apply findings according to context"))[:500],
                                 "recommendation": str(item.get("recommendation", "Use this insight to inform decisions"))[:500]
                             })
@@ -981,7 +1029,7 @@ Return all insights as a JSON array. Start your response with [ and end with ].
                             "title": str(item.get("title", "Insight"))[:200],
                             "type": item.get("type", "general"),
                             "what": str(item.get("what", ""))[:500],
-                            "why": str(item.get("why", "Generated by Gemini LLM Council"))[:500],
+                            "why": str(item.get("why", "Generated by LLM Council"))[:500],
                             "how": str(item.get("how", "Apply according to context"))[:500],
                             "recommendation": str(item.get("recommendation", "Use to inform decisions"))[:500]
                         })
@@ -1092,9 +1140,10 @@ Return all insights as a JSON array. Start your response with [ and end with ].
         else:
             return "general"
     
-    async def rank_models_with_council(self, model_results: Dict[str, Any]) -> Dict[str, Any]:
+    async def rank_models_with_council(self, model_results: Dict[str, Any],
+                                      trace_dir: Optional[str] = None) -> Dict[str, Any]:
         """
-        Use Gemini LLM Council to rank and select best models
+        Use LLM Council to rank and select best models
         
         Args:
             model_results: Dictionary with model names and their metrics
@@ -1106,7 +1155,7 @@ Return all insights as a JSON array. Start your response with [ and end with ].
             logger.info("LLM Council disabled, returning empty ranking")
             return {"council_used": False}
         
-        logger.info("Ranking models with Gemini LLM Council consensus")
+        logger.info("Ranking models with LLM Council consensus")
         
         # Build model summary for prompt
         model_summary = "\n".join([
@@ -1148,8 +1197,17 @@ RECOMMENDATION:
 """
         
         try:
-            # Run Gemini LLM Council
-            stage1_results, stage2_results, stage3_result, metadata = await run_full_gemini_council(prompt)
+            # Run LLM Council
+            stage1_results, stage2_results, stage3_result, metadata = await run_full_council(prompt)
+            self._save_council_trace(trace_dir, {
+                "timestamp": datetime.now().isoformat(),
+                "task": "model_ranking",
+                "prompt": prompt,
+                "stage1_results": stage1_results,
+                "stage2_results": stage2_results,
+                "stage3_result": stage3_result,
+                "metadata": metadata
+            })
             
             result = {
                 "council_used": True,
@@ -1185,7 +1243,7 @@ RECOMMENDATION:
             return result
             
         except Exception as e:
-            logger.error(f"Error in Gemini LLM Council model ranking: {e}")
+            logger.error(f"Error in LLM Council model ranking: {e}")
             return {"council_used": False, "error": str(e)}
             
         except Exception as e:
@@ -1240,6 +1298,10 @@ class EnhancedAnalysisPipeline:
     @property
     def output_dir(self):
         return self.base_pipeline.output_dir
+
+    @property
+    def run_id(self):
+        return self.base_pipeline.run_id
     
     async def generate_hypotheses_async(self, max_hypotheses: int = 100) -> List[Dict[str, Any]]:
         """
@@ -1255,7 +1317,7 @@ class EnhancedAnalysisPipeline:
             # Use LLM Council for consensus-based hypothesis generation
             dataset_info = self.base_pipeline.results.get('dataset_info', {})
             return await self.council_adapter.generate_hypotheses_with_council(
-                dataset_info, max_hypotheses
+                dataset_info, max_hypotheses, trace_dir=self.base_pipeline.output_dir
             )
         else:
             # Use Agentic approach with tools
@@ -1305,7 +1367,7 @@ class EnhancedAnalysisPipeline:
         if self.use_council:
             # Use LLM Council for consensus-based insight generation
             return await self.council_adapter.generate_insights_with_council(
-                self.base_pipeline.results, min_insights
+                self.base_pipeline.results, min_insights, trace_dir=self.base_pipeline.output_dir
             )
         else:
             # Use Agentic approach with tools
@@ -1365,7 +1427,9 @@ class EnhancedAnalysisPipeline:
         """
         if self.use_council and self.base_pipeline.results.get('models'):
             models = self.base_pipeline.results['models'].get('models', {})
-            return await self.council_adapter.rank_models_with_council(models)
+            return await self.council_adapter.rank_models_with_council(
+                models, trace_dir=self.base_pipeline.output_dir
+            )
         else:
             return {"council_used": False}
     
@@ -1382,6 +1446,11 @@ class EnhancedAnalysisPipeline:
             Dictionary with all results including council metadata
         """
         logger.info("Running full pipeline with LLM Council integration")
+        start_time = datetime.now()
+        try:
+            self.base_pipeline._log_step("Full pipeline (council)", "start")
+        except Exception:
+            pass
         
         # Run base pipeline steps
         self.base_pipeline.load_data()
@@ -1422,6 +1491,20 @@ class EnhancedAnalysisPipeline:
         
         # Generate reports
         self.base_pipeline.generate_reports(formats=['markdown', 'word'] if generate_word else ['markdown'])
+        
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        try:
+            self.base_pipeline._log_step("Full pipeline (council)", "complete",
+                                         f"Completed in {duration:.1f} seconds")
+        except Exception:
+            pass
+
+        # Save results snapshot and run manifest
+        self.base_pipeline.save_results_snapshot()
+        self.base_pipeline.save_run_manifest(start_time, end_time, extra_context={
+            "council_used": self.use_council
+        })
         
         # Save execution log
         self.base_pipeline.save_execution_log()

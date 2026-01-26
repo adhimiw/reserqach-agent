@@ -59,7 +59,7 @@ python main.py data/sales.csv --use-council
 - Potential bias
 
 **With Council:**
-- Multiple LLMs (GPT-4, Claude, Gemini, etc.) generate hypotheses
+- Multiple LLMs (GPT-4, Claude, Mistral, etc.) generate hypotheses
 - Each LLM ranks others' suggestions
 - Chairman synthesizes final consensus
 - More diverse, validated hypotheses
@@ -145,7 +145,7 @@ To use LLM Council features:
 - Different LLMs with different strengths:
   - GPT-4: Strong reasoning and code
   - Claude 3.5 Sonnet: Nuanced analysis
-  - Gemini 3 Pro: Broad knowledge
+  - Mistral Large 2512: Broad knowledge
   - Grok 4: Current events
 - Synthesis of best approaches
 

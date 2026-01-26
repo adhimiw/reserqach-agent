@@ -155,14 +155,14 @@ Enhanced with **multi-agent consensus decision-making** using [LLM Council](http
 
 **Isolated Output Folders**:
 ```
-output/analyses/{dataset_name}/
-├── data/              # Original and cleaned data
-├── code/              # Generated analysis code
+output/analyses/{dataset_name}/{run_id}/
+├── data/               # Original and cleaned data
+├── code/               # Run manifest + council traces
 ├── visualizations/     # All charts and graphs
-├── insights/           # Hypotheses, tests, models, insights JSON
-├── logs/              # Execution and error logs
-├── {dataset}_report.md    # Markdown report
-└── {dataset}_report.docx  # Word document
+├── insights/           # Hypotheses, tests, models, insights JSON + HTML
+├── logs/               # Execution and error logs
+├── {dataset}_report.md # Markdown report
+└── {dataset}_report.docx # Word document
 ```
 
 #### 5. Real-Time Research Integration

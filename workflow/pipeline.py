@@ -9,6 +9,7 @@ import json
 import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from collections import Counter
 import logging
 
 from config import Config
@@ -32,6 +33,8 @@ class AnalysisPipeline:
         self.dataset_path = dataset_path
         self.dataset_name = os.path.basename(dataset_path).split('.')[0]
         self.output_dir = output_dir or Config.get_analysis_output_dir(self.dataset_name)
+        self.run_id = os.path.basename(self.output_dir)
+        self.dataset_root_dir = os.path.dirname(self.output_dir)
         
         # Create output subdirectories
         for subdir in ['data', 'code', 'visualizations', 'insights', 'logs']:
@@ -54,7 +57,9 @@ class AnalysisPipeline:
             "models": {},
             "insights": [],
             "visualizations": {},
-            "error_log": []
+            "error_log": [],
+            "run_id": self.run_id,
+            "output_dir": self.output_dir
         }
         
         self.execution_log = []
@@ -382,6 +387,11 @@ class AnalysisPipeline:
                 reports['word'] = word_path
             except Exception as e:
                 logger.warning(f"Word report generation failed: {e}")
+
+        # Generate HTML insights report
+        html_path = self.generate_html_insights_report()
+        if html_path:
+            reports['insights_html'] = html_path
         
         self._log_step("Report generation", "complete", 
                       f"Generated reports in {list(reports.keys())}")
@@ -538,6 +548,266 @@ The system includes automatic error detection and recovery:
         doc.save(word_path)
         
         return word_path
+
+    def generate_html_insights_report(self) -> Optional[str]:
+        """
+        Generate an HTML report with all insights in a human-readable template.
+        
+        Returns:
+            Path to HTML file, or None if no insights available
+        """
+        insights = self.results.get('insights', [])
+        
+        def esc(text: Any) -> str:
+            if text is None:
+                return ""
+            value = str(text)
+            return (
+                value.replace("&", "&amp;")
+                     .replace("<", "&lt;")
+                     .replace(">", "&gt;")
+                     .replace('"', "&quot;")
+            )
+        
+        dataset_info = self.results.get('dataset_info', {})
+        type_counts = Counter([i.get('type', 'general') for i in insights])
+        summary_items = "".join(
+            f"<li><strong>{esc(k)}</strong>: {v}</li>"
+            for k, v in sorted(type_counts.items(), key=lambda x: (-x[1], x[0]))
+        ) or "<li>No insights generated</li>"
+        
+        cards = []
+        for idx, insight in enumerate(insights, 1):
+            title = insight.get('title') or f"Insight {idx}"
+            insight_type = insight.get('type', 'general')
+            what = insight.get('what', '')
+            why = insight.get('why', '')
+            how = insight.get('how', '')
+            recommendation = insight.get('recommendation', '')
+            cards.append(
+                f"""
+                <article class="card">
+                  <div class="card-header">
+                    <h3>{esc(title)}</h3>
+                    <span class="badge">{esc(insight_type)}</span>
+                  </div>
+                  <div class="card-body">
+                    <p><strong>What:</strong> {esc(what)}</p>
+                    <p><strong>Why:</strong> {esc(why)}</p>
+                    <p><strong>How:</strong> {esc(how)}</p>
+                    <p><strong>Recommendation:</strong> {esc(recommendation)}</p>
+                  </div>
+                </article>
+                """
+            )
+        
+        if not cards:
+            cards.append(
+                """
+                <article class="card">
+                  <div class="card-header">
+                    <h3>No insights available</h3>
+                    <span class="badge">info</span>
+                  </div>
+                  <div class="card-body">
+                    <p>No insights were generated for this run. Review the logs for errors or rerun with a valid dataset.</p>
+                  </div>
+                </article>
+                """
+            )
+        
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Insights Report - {esc(self.dataset_name)}</title>
+  <style>
+    :root {{
+      --bg: #f6f5f1;
+      --card: #ffffff;
+      --text: #1b1b1f;
+      --muted: #5b5b64;
+      --accent: #1f6feb;
+      --border: #e0dfd9;
+    }}
+    body {{
+      margin: 0;
+      font-family: "Georgia", "Times New Roman", serif;
+      color: var(--text);
+      background: var(--bg);
+    }}
+    .wrap {{
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 32px 20px 60px;
+    }}
+    header {{
+      margin-bottom: 24px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 16px;
+    }}
+    h1 {{
+      margin: 0 0 8px 0;
+      font-size: 2.2rem;
+      letter-spacing: -0.02em;
+    }}
+    .meta {{
+      color: var(--muted);
+      font-size: 0.95rem;
+    }}
+    .summary {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin: 20px 0 32px;
+    }}
+    .summary-card {{
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }}
+    .summary-card h2 {{
+      margin: 0 0 8px 0;
+      font-size: 1.1rem;
+    }}
+    .summary-card ul {{
+      margin: 0;
+      padding-left: 18px;
+    }}
+    .cards {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }}
+    .card {{
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+    }}
+    .card-header {{
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 10px;
+    }}
+    .card-header h3 {{
+      margin: 0;
+      font-size: 1.1rem;
+    }}
+    .badge {{
+      background: rgba(31, 111, 235, 0.12);
+      color: var(--accent);
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }}
+    .card-body p {{
+      margin: 0 0 10px 0;
+      line-height: 1.5;
+    }}
+    .card-body p:last-child {{
+      margin-bottom: 0;
+    }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Insights Report</h1>
+      <div class="meta">
+        Dataset: {esc(self.dataset_name)} | Rows: {dataset_info.get('shape', ['', ''])[0]} | Columns: {dataset_info.get('shape', ['', ''])[1]} | Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+      </div>
+    </header>
+
+    <section class="summary">
+      <div class="summary-card">
+        <h2>Overview</h2>
+        <p>Total insights: <strong>{len(insights)}</strong></p>
+        <p>Output directory: {esc(self.output_dir)}</p>
+      </div>
+      <div class="summary-card">
+        <h2>Insight Types</h2>
+        <ul>
+          {summary_items}
+        </ul>
+      </div>
+    </section>
+
+    <section class="cards">
+      {''.join(cards)}
+    </section>
+  </div>
+</body>
+</html>
+"""
+        html_path = os.path.join(self.output_dir, 'insights', 'insights_report.html')
+        with open(html_path, 'w') as f:
+            f.write(html)
+        
+        self.results['insights_html'] = html_path
+        return html_path
+
+    def save_results_snapshot(self) -> Optional[str]:
+        """Save a full results snapshot to disk."""
+        try:
+            snapshot_path = os.path.join(self.output_dir, 'insights', 'results_snapshot.json')
+            with open(snapshot_path, 'w') as f:
+                json.dump(self.results, f, indent=2, default=str)
+            return snapshot_path
+        except Exception as e:
+            logger.warning(f"Failed to save results snapshot: {e}")
+            return None
+
+    def save_run_manifest(self, start_time: datetime, end_time: Optional[datetime] = None,
+                          extra_context: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Save a run manifest to the code folder."""
+        def is_secret(key: str) -> bool:
+            key_upper = key.upper()
+            return any(token in key_upper for token in ["KEY", "TOKEN", "SECRET", "PASSWORD"])
+        
+        config_snapshot = {}
+        for key in dir(Config):
+            if key.isupper() and not is_secret(key):
+                try:
+                    config_snapshot[key] = getattr(Config, key)
+                except Exception:
+                    continue
+        
+        manifest = {
+            "run_id": self.run_id,
+            "dataset_name": self.dataset_name,
+            "dataset_path": self.dataset_path,
+            "output_dir": self.output_dir,
+            "started_at": start_time.isoformat(),
+            "completed_at": end_time.isoformat() if end_time else None,
+            "results_summary": {
+                "hypotheses": len(self.results.get('hypotheses', [])),
+                "statistical_tests": len(self.results.get('statistical_tests', [])),
+                "models": len(self.results.get('models', {}).get('models', {})),
+                "insights": len(self.results.get('insights', [])),
+                "visualizations": len(self.results.get('visualizations', {}))
+            },
+            "config": config_snapshot
+        }
+        
+        if extra_context:
+            manifest["extra_context"] = extra_context
+        
+        manifest_path = os.path.join(self.output_dir, 'code', 'run_manifest.json')
+        try:
+            with open(manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2, default=str)
+            return manifest_path
+        except Exception as e:
+            logger.warning(f"Failed to save run manifest: {e}")
+            return None
     
     def run_full_pipeline(self, target_column: str = None, 
                         generate_word: bool = True, 
@@ -591,14 +861,18 @@ The system includes automatic error detection and recovery:
                 with open(code_path, 'w') as f:
                     json.dump(council_code, f, indent=2)
             
-            # Step 10: Save execution log
-            self.save_execution_log()
-            
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
             
             self._log_step("Full pipeline", "complete", 
                           f"Completed in {duration:.1f} seconds")
+
+            # Step 10: Save results snapshot and run manifest
+            self.save_results_snapshot()
+            self.save_run_manifest(start_time, end_time)
+            
+            # Step 11: Save execution log (after completion entry)
+            self.save_execution_log()
             
             return self.results
             
@@ -629,6 +903,9 @@ The system includes automatic error detection and recovery:
         
         with open(log_path, 'w') as f:
             json.dump({
+                "run_id": self.run_id,
+                "dataset_name": self.dataset_name,
+                "output_dir": self.output_dir,
                 "execution_log": self.execution_log,
                 "results_summary": {
                     "hypotheses": len(self.results.get('hypotheses', [])),

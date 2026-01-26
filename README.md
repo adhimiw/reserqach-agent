@@ -23,7 +23,7 @@ An intelligent, autonomous system that analyzes datasets, generates hypotheses, 
 **LLM Council** adds multi-agent consensus decision-making to the analysis system:
 
 #### How It Works
-1. **Stage 1 - First Opinions**: Multiple LLMs (GPT-4, Claude 3.5, Gemini, etc.) independently analyze the same question
+1. **Stage 1 - First Opinions**: Multiple LLMs (GPT-4, Claude 3.5, Mistral, etc.) independently analyze the same question
 2. **Stage 2 - Peer Review**: Each LLM evaluates and ranks others' responses (anonymized to prevent bias)
 3. **Stage 3 - Final Synthesis**: A Chairman LLM synthesizes all inputs into a single, high-quality answer
 
@@ -217,13 +217,16 @@ python test_council_integration.py
 
 ## Output Structure
 
-For each dataset analysis, system creates an isolated directory:
+For each dataset analysis, the system creates a per-run directory:
 
 ```
-output/analyses/{dataset_name}/
+output/analyses/{dataset_name}/{run_id}/
 ├── data/
 │   ├── original.csv          # Your original data
 │   └── cleaned.csv          # Cleaned version
+├── code/
+│   ├── run_manifest.json     # Run metadata + config snapshot
+│   └── llm_council_trace.jsonl  # Council prompts/responses (if enabled)
 ├── visualizations/
 │   ├── dashboard.png         # Overview dashboard
 │   ├── correlation_heatmap.png
@@ -234,7 +237,9 @@ output/analyses/{dataset_name}/
 │   ├── hypotheses.json      # All generated hypotheses
 │   ├── statistical_tests.json
 │   ├── models.json         # Model results
-│   └── insights.json       # Actionable insights
+│   ├── insights.json       # Actionable insights
+│   ├── insights_report.html # Human-readable insights report
+│   └── results_snapshot.json # Full results snapshot
 ├── logs/
 │   ├── execution_log.json   # Complete execution trail
 │   ├── council_log.json    ← NEW: LLM Council details
@@ -242,6 +247,8 @@ output/analyses/{dataset_name}/
 ├── {dataset}_report.md   # Markdown report
 └── {dataset}_report.docx  # Word document
 ```
+
+Each dataset folder also includes a `latest.json` pointer to the most recent run.
 
 ## LLM Council Features in Detail
 
@@ -295,11 +302,11 @@ MIN_INSIGHTS = 50
 COUNCIL_MODELS = [
     "openai/gpt-4",
     "anthropic/claude-sonnet-4.5",
-    "google/gemini-3-pro-preview",
+    "mistral/mistral-large-2512",
     "x-ai/grok-4"
 ]
 
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
+CHAIRMAN_MODEL = "mistral/mistral-large-2512"
 ```
 
 ## MCP Servers
@@ -320,6 +327,9 @@ Provides tools for code execution:
 - `run_notebook`: Execute notebook cells
 - `convert_to_html`: Convert notebook to HTML
 - `generate_analysis_notebook`: Create complete analysis notebooks
+
+### Playwright MCP Server
+Provides browser automation tools for live research (e.g., Google search) and web context gathering.
 
 ## Comparing Modes
 

@@ -3,10 +3,10 @@ Enhanced Configuration with LLM Council Support and Logging
 """
 
 import os
+import json
 from dotenv import load_dotenv
 import logging
 from datetime import datetime
-import json
 from pathlib import Path
 
 load_dotenv()
@@ -80,13 +80,13 @@ class Config:
             "cost_per_1k_tokens": 0.015
         },
         {
-            "name": "Gemini Pro",
-            "id": "google/gemini-3-pro-preview",
-            "provider": "openrouter",
-            "model": "google/gemini-3-pro-preview",
+            "name": "Mistral Large 2512",
+            "id": "mistral/mistral-large-2512",
+            "provider": "mistral",
+            "model": "mistral-large-2512",
             "capabilities": ["reasoning", "analysis", "coding"],
-            "max_tokens": 120000,
-            "cost_per_1k_tokens": 0.002
+            "max_tokens": 128000,
+            "cost_per_1k_tokens": 0.005
         },
         {
             "name": "Grok 4",
@@ -100,8 +100,8 @@ class Config:
     ]
     
     # Chairman model (synthesizes final response)
-    CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
-    CHAIRMAN_MODEL_ID = "google/gemini-3-pro-preview"
+    CHAIRMAN_MODEL = "mistral/mistral-large-2512"
+    CHAIRMAN_MODEL_ID = "mistral/mistral-large-2512"
     
     # Council operations
     ENABLE_COUNCIL = os.getenv("ENABLE_COUNCIL", "true").lower() == "true"
@@ -287,16 +287,36 @@ class Config:
     
     @classmethod
     def get_analysis_output_dir(cls, dataset_name: str) -> str:
-        """Get output directory for a specific dataset analysis"""
+        """Get output directory for a specific dataset analysis (per-run)"""
         safe_name = dataset_name.replace('/', '_').replace('\\', '_')
-        analysis_dir = os.path.join(cls.ANALYSES_DIR, safe_name)
-        os.makedirs(analysis_dir, exist_ok=True)
+        analysis_root = os.path.join(cls.ANALYSES_DIR, safe_name)
+        os.makedirs(analysis_root, exist_ok=True)
+
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_dir = os.path.join(analysis_root, run_id)
+        if os.path.exists(run_dir):
+            counter = 1
+            while os.path.exists(f"{run_dir}_{counter}"):
+                counter += 1
+            run_dir = f"{run_dir}_{counter}"
+            run_id = os.path.basename(run_dir)
         
         # Create subdirectories
         for subdir in ['data', 'code', 'visualizations', 'insights', 'logs']:
-            os.makedirs(os.path.join(analysis_dir, subdir), exist_ok=True)
+            os.makedirs(os.path.join(run_dir, subdir), exist_ok=True)
+
+        latest_path = os.path.join(analysis_root, "latest.json")
+        try:
+            with open(latest_path, 'w') as f:
+                json.dump({
+                    "run_id": run_id,
+                    "run_dir": run_dir,
+                    "timestamp": datetime.now().isoformat()
+                }, f, indent=2)
+        except Exception:
+            pass
         
-        return analysis_dir
+        return run_dir
     
     @classmethod
     def is_council_enabled(cls) -> bool:
