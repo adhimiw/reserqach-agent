@@ -17,6 +17,7 @@ An intelligent, autonomous system that analyzes datasets, generates hypotheses, 
 - **LLM Council Integration**: Multi-agent consensus for higher quality decisions
 - **Real-Time Research**: Integrates Perplexity API for contextual insights
 - **Report Generation**: Creates comprehensive Markdown and Word reports
+- **Autonomous Code Generation**: Agent writes and executes its own Python code with full terminal access
 
 ### NEW: LLM Council Integration
 
@@ -41,7 +42,22 @@ python main.py data/sales.csv --use-council --target_column revenue
 
 # Or use dedicated entry point
 python main_with_council.py data/sales.csv --use-council
+
+# Autonomous coding (agent writes and executes its own code)
+python main_autonomous.py your_dataset.csv --target column
 ```
+
+### NEW: Autonomous Code Generation
+
+**Autonomous Coding** allows the agent to write, save, and execute its own Python code with full terminal access!
+
+- Agent generates custom Python code for each analysis task (no pre-coded logic)
+- All code saved as `.py` and `.ipynb` files for full transparency
+- Creates and manages isolated Python environments (venv, conda, UV)
+- Executes code with full subprocess control and terminal access
+- Complete traceability with code manifests and execution logs
+
+See [AUTONOMOUS_CODING_README.md](AUTONOMOUS_CODING_README.md) for complete documentation.
 
 ### Success Criteria Met
 ✅ System operates autonomously with minimal human intervention
