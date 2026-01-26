@@ -13,6 +13,8 @@ from .analyzer import (
 )
 from .self_healer import SelfHealingAgent
 from .visualizer import DataVisualizer
+from .code_executor import CodeExecutionAgent
+from .autonomous_coder import AutonomousCoderAgent
 
 __all__ = [
     'create_analyzer_agent',
@@ -23,5 +25,7 @@ __all__ = [
     'create_visualizer_agent',
     'create_research_context_agent',
     'SelfHealingAgent',
-    'DataVisualizer'
+    'DataVisualizer',
+    'CodeExecutionAgent',
+    'AutonomousCoderAgent'
 ]
